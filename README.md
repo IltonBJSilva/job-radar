@@ -18,116 +18,162 @@
 
 ---
 
-## 💎 Proposta de valor
+## 💎 Proposta de Valor
 
 > Em cidade pequena, vaga boa de Dados/BI aparece pouco e some rápido — quem checa o board duas vezes por dia perde pra quem checou na primeira hora. **JobRadar** é um sistema de monitoramento contínuo que substitui essa checagem manual: varre **8 fontes** a cada **3 horas**, filtra por cargo/cidade/mercado/idioma com três níveis de confiança, pontua cada vaga por relevância e notifica no Telegram — rodando de graça, sem servidor próprio, 24 horas por dia.
-
-## 📄 Resumo executivo
-
-Entre 07 e 15 de agosto, o sistema já processou **1.052 vagas únicas**, sem intervenção manual nenhuma — mas os números também expõem os riscos reais da arquitetura atual:
-
-| Achado | Número |
-|---|---|
-| 📊 Vagas processadas (deduplicadas) | **1.052** |
-| 🔗 Concentração numa única fonte (LinkedIn) | **89,5%** |
-| 🧪 Testes automatizados (CI a cada push) | **73** |
-| 🌎 Fontes monitoradas em paralelo | **8** |
-| ⏱️ Frequência de checagem | **a cada 3h** |
-| 💰 Custo de infraestrutura | **R$ 0** |
-
-A concentração em LinkedIn é um risco medido, não ignorado: o endpoint usado não é oficial e o próprio código documenta a chance de bloqueio — por isso parte do trabalho recente foi medir o rendimento de cada fonte secundária e paginar mais fundo nelas, em vez de só empilhar fonte nova.
-
----
-
-## 📸 Como chega pra você
-
-<!-- ![Notificação no Telegram](assets/screenshots/notificacao.png) -->
-
-Vaga de alta relevância chega na hora, com motivo da aprovação, nível e link. O resto do dia entra num resumo único, ranqueado — sem virar spam.
 
 ---
 
 ## 🗂️ Sumário
 
-- [Como funciona (pipeline)](#-como-funciona-pipeline)
-- [Arquitetura técnica](#%EF%B8%8F-arquitetura-técnica)
-- [Estrutura do repositório](#-estrutura-do-repositório)
-- [Como rodar](#-como-rodar)
-- [Testes](#-testes)
+- [Visão Geral e Resultados](#-visão-geral-e-resultados)
+- [Como Funciona (Pipeline)](#-como-funciona-pipeline)
+- [Arquitetura Técnica](#%EF%B8%8F-arquitetura-técnica)
+- [Estrutura do Repositório](#-estrutura-do-repositório)
+- [Como Executar Localmente](#-como-executar-localmente)
+- [Testes Automatizados](#-testes-automatizados)
 
 ---
 
-## 🧭 Como funciona (pipeline)
+## 📄 Visão Geral e Resultados
 
-| Etapa | O que faz |
+O JobRadar é um sistema que opera **sem intervenção manual**, projetado para garantir máxima eficiência e custo zero de infraestrutura. 
+
+Em testes reais (entre 07 e 15 de agosto), o sistema processou **1.052 vagas únicas**. Os dados expõem as características da arquitetura atual:
+
+| Métrica / Achado | Valor |
 |---|---|
-| **Busca** | Varre as fontes em paralelo, com rodízio de termos pra controlar custo por ciclo |
-| **Filtra** | Cargo (forte / ambíguo + qualificador / ferramenta + cargo), cidade ou mercado remoto, idioma |
-| **Pontua** | Score 0–10 por vaga: cargo, ferramenta, senioridade, mercado, idioma — soma de sinais, sem IA |
-| **Deduplica** | Por link e por empresa+título, pra pegar a mesma vaga republicada em fonte diferente |
-| **Notifica** | Alta relevância na hora; o resto num resumo diário ranqueado, melhor vaga no topo |
-| **Aprende** | Botão 👍/👎 em cada notificação — feedback vira dado pra medir precisão por fonte e por semana |
+| 📊 **Vagas processadas** (deduplicadas) | **1.052** |
+| 🔗 **Concentração** (maior volume no LinkedIn) | **89,5%** |
+| 🧪 **Testes automatizados** (CI a cada push) | **73** |
+| 🌎 **Fontes monitoradas** (em paralelo) | **8** |
+| ⏱️ **Frequência de checagem** | **a cada 3h** |
+| 💰 **Custo de infraestrutura** | **R$ 0** |
 
-## 🏗️ Arquitetura técnica
+> **Nota sobre o LinkedIn:** A concentração no LinkedIn é um risco medido. Como o endpoint utilizado não é oficial e há risco de bloqueio, a estratégia atual foca em otimizar o rendimento das fontes secundárias (paginação profunda) em vez de apenas adicionar novas fontes.
 
-- **Filtro em 3 níveis de confiança:** cargo inequívoco passa sozinho; cargo ambíguo (ex: "Business Analyst") só conta com qualificador de dados junto no título; ferramenta (ex: "Power BI") só conta com palavra de cargo junto — nada aprova por palavra-chave solta.
-- **Score de relevância sem ML:** 5 sinais conhecidos (cargo, ferramenta, senioridade, mercado, idioma), pesos calibrados contra o histórico real do banco, não chutados.
-- **Zero infraestrutura:** GitHub Actions como motor de cron, SQLite como banco — versionado no próprio Git, o histórico de vagas já vistas *é* o commit.
-- **Resiliente:** nunca marca vaga como "vista" sem confirmar que a notificação saiu; alerta automático se metade das fontes falhar num ciclo; heartbeat diário confirmando que o robô ainda está de pé.
-- **73 testes automatizados em CI:** cada caso documenta um bug real já corrigido nesta base — não é cenário hipotético, é regressão registrada.
+---
 
-## 📁 Estrutura do repositório
+## 📸 Como a Notificação Chega pra Você
 
-obradar/
+<!-- ![Notificação no Telegram](assets/screenshots/notificacao.png) -->
+
+Vagas de **alta relevância** chegam em tempo real, informando o motivo da aprovação, o nível de senioridade e o link direto. Vagas regulares entram em um **resumo diário (digest)**, ranqueadas por relevância, evitando sobrecarregar seu Telegram com notificações não solicitadas.
+
+---
+
+## 🧭 Como Funciona (Pipeline)
+
+| Etapa | Descrição |
+|---|---|
+| 🔍 **Busca** | Varre as fontes em paralelo, aplicando rodízio de termos para controlar o escopo e evitar limites de requisição. |
+| 🎯 **Filtra** | Analisa cargo, qualificadores de dados, ferramentas, cidade, mercado (remoto/presencial) e idioma. |
+| ⭐ **Pontua** | Atribui um score de 0 a 10 para cada vaga com base em sinais claros (cargo, ferramenta, senioridade), sem o uso de IA. |
+| 🔄 **Deduplica** | Evita vagas repetidas cruzando link, empresa e título (útil para vagas publicadas em múltiplas fontes). |
+| 📲 **Notifica** | Envia alertas imediatos para vagas *top-tier* e um resumo diário ranqueado para as demais. |
+| 🧠 **Aprende** | Coleta feedback através de botões 👍/👎 no Telegram, utilizando os dados para mensurar precisão e refinar os filtros. |
+
+---
+
+## 🏗️ Arquitetura Técnica
+
+- **Filtro Semântico (3 Níveis):** Um cargo inequívoco é aprovado de imediato. Cargos ambíguos (ex: "Business Analyst") exigem um qualificador da área de dados. Ferramentas (ex: "Power BI") necessitam estar acompanhadas de termos de cargo. Nenhuma vaga é aprovada por palavra-chave solta.
+- **Score Algorítmico:** Baseado em 5 sinais conhecidos (cargo, ferramenta, senioridade, mercado, idioma). Os pesos foram calibrados contra um histórico real de banco de dados.
+- **Zero Infraestrutura (Serverless):** Utiliza **GitHub Actions** como motor de Cron e **SQLite** (versionado no próprio Git) como banco de dados. O histórico de vagas é mantido nos commits do repositório.
+- **Resiliência e Tolerância a Falhas:** Nenhuma vaga é marcada como "vista" sem a confirmação de envio da notificação. O sistema emite alertas automáticos caso 50% das fontes falhem e envia um *heartbeat* diário confirmando sua atividade.
+- **CI / CD (Testes em Produção):** Com 73 testes em CI, cada cenário reflete um bug real corrigido no histórico do projeto, garantindo robustez contra regressões.
+
+---
+
+## 📁 Estrutura do Repositório
+
+```text
+job-radar/
 ├── README.md
 ├── requirements.txt
-├── main.py ← motor único: um ciclo de busca por perfil
-├── perfis.py ← Brasil vs Internacional (dado, não lógica duplicada)
-├── config.py / config_intl.py ← cargos, cidades, termos de busca, pesos
-├── job.py ← Job, filtro, score de relevância
-├── relatorio_precisao.py ← aprovadas/notificadas por fonte e por semana
+├── main.py                     # Motor principal: executa o ciclo de busca por perfil
+├── core/
+│   ├── perfis.py               # Configuração Brasil vs Internacional
+│   ├── config.py / config_intl.py # Configurações, cargos, termos e pesos
+│   └── job.py                  # Classe Job, regras de filtro e score
+├── relatorio_precisao.py       # Estatísticas de vagas aprovadas/notificadas
 ├── database/
-│ └── database.py ← SQLite: dedup, fila de digest, metadados
+│   └── database.py             # SQLite: deduplicação, fila de digest e metadados
 ├── notifier/
-│ └── telegram.py ← notificação individual, digest, botão 👍/👎
-├── scrapers/ ← um módulo por fonte (LinkedIn, Gupy, Indeed...)
+│   └── telegram.py             # Integração Telegram (notificações, digest e botões)
+├── scrapers/                   # Módulos de extração (LinkedIn, Gupy, Indeed, etc.)
 ├── utils/
-│ └── filtro.py
-├── tests/ ← 73 casos, roda em CI a cada push
+│   └── filtro.py               # Funções de auxílio para filtragem
+├── tests/                      # 73 casos de teste automatizados
 ├── data/
-│ └── jobs.db ← banco versionado (histórico de dedup)
+│   └── jobs.db                 # Banco SQLite versionado
 └── .github/workflows/
-├── jobradar.yml ← cron de produção (a cada 3h)
-└── testes.yml ← CI
+    ├── jobradar.yml            # Workflow de cron job (execução a cada 3h)
+    └── testes.yml              # CI para validação de PRs e pushes
+```
 
-## 💻 Como rodar
+---
 
+## 💻 Como Executar Localmente
+
+### Pré-requisitos
+- Python 3.11+
+- Git
+
+### Passos de Instalação
+
+1. Clone o repositório:
 ```bash
-git clone <repo>
-cd jobradar
-python -m venv venv && venv\Scripts\activate   # Linux/Mac: source venv/bin/activate
+git clone https://github.com/IltonBJSilva/job-radar.git
+cd job-radar
+```
+
+2. Crie e ative um ambiente virtual:
+```bash
+# Windows
+python -m venv venv
+venv\Scripts\activate
+
+# Linux/macOS
+python -m venv venv
+source venv/bin/activate
+```
+
+3. Instale as dependências:
+```bash
 pip install -r requirements.txt
 python -m playwright install chromium
 ```
 
-Criar `.env` na raiz com `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` (via [@BotFather](https://t.me/BotFather)), depois:
+4. Configure as Variáveis de Ambiente:
+Crie um arquivo `.env` na raiz do projeto contendo as chaves do seu bot do Telegram (criado via [@BotFather](https://t.me/BotFather)):
 
+```env
+TELEGRAM_BOT_TOKEN=seu_token_aqui
+TELEGRAM_CHAT_ID=seu_chat_id_aqui
+```
+
+5. Execute o projeto:
 ```bash
 python main.py --perfil brasil internacional --once
 ```
 
-## 🧪 Testes
+---
 
+## 🧪 Testes Automatizados
+
+O sistema conta com uma suíte de 73 testes automatizados (parametrizados) que validam desde a camada de filtro e parsing de callbacks do Telegram até os relatórios de precisão.
+
+Para executá-los localmente:
 ```bash
 pytest tests/ -v
 ```
-
-73 casos parametrizados, cobrindo a camada de filtro, o parsing de callback do Telegram e o relatório de precisão — todos rodando automaticamente a cada push via GitHub Actions.
+*Esses testes são executados automaticamente a cada push via GitHub Actions.*
 
 ---
 
 <div align="center">
 
-*Case de portfólio em automação de dados — Python, Playwright, SQLite, GitHub Actions e engenharia de filtro sem ML.*
+*Projeto portfólio de automação de dados utilizando Python, Playwright, SQLite, GitHub Actions e engenharia avançada de filtros (sem uso de Machine Learning).*
 
 </div>

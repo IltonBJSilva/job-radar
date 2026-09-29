@@ -235,6 +235,7 @@ class LinkedInScraper(BaseScraper):
                                 link=link,
                                 site="LinkedIn",
                                 publicado_em=publicado_em,
+                                texto=card.inner_text() if 'card' in locals() and hasattr(card, 'inner_text') else "",
                                 modalidade=modalidade,
                             ))
                         except Exception as e:

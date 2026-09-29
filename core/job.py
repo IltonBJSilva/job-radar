@@ -1078,6 +1078,7 @@ class Job:
     # escopo agora — string crua já é suficiente pra exibir na notificação e
     # é o que a fonte realmente disse. "" quando o site não expõe a data.
     publicado_em: str = ""
+    texto: str = ""
     # Modalidade (Remoto/Híbrido/Presencial) como campo PRÓPRIO, preenchido
     # pelo scraper na hora da extração. Antes vivia embutida dentro do texto
     # de `local` (ex: "São Paulo - SP (Remoto)") e era redetectada por
@@ -1379,17 +1380,17 @@ class Job:
         )
 
         # HEURÍSTICA DE IDIOMA:
-        # Se o perfil é internacional (exige idioma específico), força a rejeição se o 
-        # texto não contiver o mínimo de palavras comuns em português/espanhol.
-        # Isso impede que vagas 100% em inglês de Portugal acabem passando.
-        if regras.idiomas_exigidos is not None and bate_cidade:
-            texto_norm = _normalizar(self.texto)
+        # Filtra as vagas somente quando a descrição está em português, conforme solicitado.
+        if bate_cidade:
+            texto_completo = _normalizar(self.texto + " " + self.titulo)
             palavras_pt = [
                 "experiencia", "requisito", "conhecimento", "trabalho", 
-                "equipe", "empresa", "desenvolvimento", "projeto", 
-                "conocimiento", "equipo", "trabajo", "desarrollo"
+                "equipe", "empresa", "desenvolvimento", "projeto", "vaga",
+                "beneficio", "salario", "atividades", "rotina", "sobre",
+                "anos", "superior", "completo", "horario", "segunda", "sexta",
+                "vale", "refeicao", "transporte", "plano", "saude"
             ]
-            if sum(1 for p in palavras_pt if p in texto_norm) < 2:
+            if sum(1 for p in palavras_pt if p in texto_completo) < 2:
                 bate_cidade = False
 
         return _Avaliacao(

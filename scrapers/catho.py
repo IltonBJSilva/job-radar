@@ -106,7 +106,8 @@ class CathoScraper(BaseScraper):
                             link=link,
                             site="Catho",
                             publicado_em=publicado_em,
-                            modalidade=modalidade,
+                            texto=card.inner_text() if 'card' in locals() and hasattr(card, 'inner_text') else "",
+                                modalidade=modalidade,
                         ))
                     except Exception as e:
                         logger.warning(f"[Catho] Erro ao processar card: {e}")

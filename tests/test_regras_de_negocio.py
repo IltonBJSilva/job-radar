@@ -24,7 +24,7 @@ def _vaga(titulo, local, modalidade):
     return Job(
         titulo=titulo, empresa="Empresa Teste", local=local,
         link=f"https://exemplo.com/{abs(hash((titulo, local, modalidade)))}",
-        site="Teste", modalidade=modalidade,
+        site="Teste", modalidade=modalidade, texto="experiência com desenvolvimento de sistemas e requisitos",
     )
 
 

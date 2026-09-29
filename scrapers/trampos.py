@@ -105,7 +105,8 @@ class TramposScraper(BaseScraper):
                             link=link,
                             site="Trampos",
                             publicado_em=publicado_em,
-                            modalidade=modalidade,
+                            texto=card.inner_text() if 'card' in locals() and hasattr(card, 'inner_text') else "",
+                                modalidade=modalidade,
                         ))
                     except Exception as e:
                         logger.warning(f"[Trampos] Erro ao processar card: {e}")

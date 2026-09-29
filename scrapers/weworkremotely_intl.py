@@ -154,7 +154,8 @@ class WeWorkRemotelyIntlScraper(BaseScraper):
                             link=link,
                             site="We Work Remotely",
                             publicado_em=publicado_em,
-                            modalidade="Remoto",
+                            texto=card.inner_text() if 'card' in locals() and hasattr(card, 'inner_text') else "",
+                                modalidade="Remoto",
                             escopo_indefinido=True,
                         ))
                     except Exception as e:

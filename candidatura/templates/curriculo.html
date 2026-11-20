@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>{{ c.candidato.nome }} — Currículo</title>
+<style>
+  @page { size: A4; margin: 14mm 15mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Calibri, Arial, sans-serif; color: #1d2433; font-size: 10.3pt; line-height: 1.42; margin: 0; }
+  h1 { font-size: 21pt; margin: 0; letter-spacing: .2px; }
+  .titulo { font-size: 11.5pt; color: #2f5bd3; font-weight: 600; margin-top: 2px; }
+  .contato { margin-top: 6px; color: #475069; font-size: 9.3pt; }
+  .contato a { color: #475069; text-decoration: none; }
+  .contato span + span::before { content: "  •  "; color: #a0a8bb; }
+  h2 { font-size: 10.5pt; text-transform: uppercase; letter-spacing: 1.2px; color: #2f5bd3; border-bottom: 1.5px solid #dfe5f5; padding-bottom: 3px; margin: 15px 0 7px; }
+  p { margin: 0 0 4px; }
+  .skills div { margin-bottom: 3px; }
+  .skills b.grupo { color: #1d2433; }
+  .hl { font-weight: 700; color: #12307f; }
+  .item { margin-bottom: 9px; page-break-inside: avoid; }
+  .item-topo { display: flex; justify-content: space-between; gap: 10px; }
+  .item-topo .nome { font-weight: 700; }
+  .item-topo .quando { color: #66708a; white-space: nowrap; font-size: 9.3pt; }
+  .sub { color: #475069; font-size: 9.5pt; }
+  ul { margin: 3px 0 0 16px; padding: 0; }
+  li { margin-bottom: 2px; }
+  .tec { color: #66708a; font-size: 9pt; margin-top: 2px; }
+  a { color: #2f5bd3; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>{{ c.candidato.nome }}</h1>
+    <div class="titulo">{{ c.titulo }}</div>
+    <div class="contato">
+      {% if c.candidato.cidade %}<span>{{ c.candidato.cidade }}</span>{% endif %}
+      {% if c.candidato.telefone %}<span>{{ c.candidato.telefone }}</span>{% endif %}
+      {% if c.candidato.email %}<span><a href="mailto:{{ c.candidato.email }}">{{ c.candidato.email }}</a></span>{% endif %}
+      {% for nome, url in c.candidato.links.items() %}<span><a href="{{ url }}">{{ url | replace('https://', '') | replace('http://', '') | replace('www.', '') }}</a></span>{% endfor %}
+    </div>
+  </header>
+
+  {% if c.resumo %}
+  <h2>Resumo</h2>
+  <p>{{ c.resumo }}</p>
+  {% endif %}
+
+  {% if c.grupos %}
+  <h2>Competências técnicas</h2>
+  <div class="skills">
+    {% for g in c.grupos %}
+    <div><b class="grupo">{{ g.nome }}:</b>
+      {% for nome, destaque in g.itens %}{% if destaque %}<span class="hl">{{ nome }}</span>{% else %}{{ nome }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if c.experiencias %}
+  <h2>Experiência profissional</h2>
+  {% for e in c.experiencias %}
+  <div class="item">
+    <div class="item-topo"><span class="nome">{{ e.cargo }} — {{ e.empresa }}</span><span class="quando">{{ e.periodo }}</span></div>
+    {% if e.local %}<div class="sub">{{ e.local }}</div>{% endif %}
+    {% if e.conquistas %}<ul>{% for x in e.conquistas %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+    {% if e.tecnologias %}<div class="tec">{{ e.tecnologias | join(' · ') }}</div>{% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if c.projetos %}
+  <h2>Projetos</h2>
+  {% for p in c.projetos %}
+  <div class="item">
+    <div class="item-topo"><span class="nome">{{ p.nome }}</span>{% if p.link %}<a class="quando" href="{{ p.link }}">{{ p.link | replace('https://', '') }}</a>{% endif %}</div>
+    <p>{{ p.descricao }}</p>
+    {% if p.tecnologias %}<div class="tec">{{ p.tecnologias | join(' · ') }}</div>{% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if c.candidato.formacao %}
+  <h2>Formação</h2>
+  {% for f in c.candidato.formacao %}
+  <div class="item-topo"><span><b>{{ f.curso }}</b> — {{ f.instituicao }}</span><span class="quando">{{ f.periodo }}</span></div>
+  {% endfor %}
+  {% endif %}
+
+  {% if c.candidato.certificacoes %}
+  <h2>Certificações</h2>
+  <ul>{% for x in c.candidato.certificacoes %}<li>{{ x }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if c.candidato.idiomas %}
+  <h2>Idiomas</h2>
+  <p>{{ c.candidato.idiomas | join('  •  ') }}</p>
+  {% endif %}
+</body>
+</html>

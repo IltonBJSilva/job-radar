@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Carta de apresentação — {{ candidato.nome }}</title>
+<style>
+  @page { size: A4; margin: 22mm 22mm; }
+  body { font-family: "Segoe UI", Calibri, Arial, sans-serif; color: #1d2433; font-size: 11pt; line-height: 1.6; }
+  .topo { border-bottom: 2px solid #2f5bd3; padding-bottom: 10px; margin-bottom: 28px; }
+  .topo h1 { margin: 0; font-size: 18pt; }
+  .topo div { color: #475069; font-size: 9.5pt; }
+  .meta { color: #475069; margin-bottom: 22px; }
+  p { margin: 0 0 14px; text-align: justify; }
+  .ass { margin-top: 28px; white-space: pre-line; }
+</style>
+</head>
+<body>
+  <div class="topo">
+    <h1>{{ candidato.nome }}</h1>
+    <div>{{ candidato.titulo }} · {{ candidato.email }}{% if candidato.telefone %} · {{ candidato.telefone }}{% endif %}</div>
+  </div>
+  <div class="meta">{{ data }}<br>A/C: {{ empresa or 'Equipe de Recrutamento' }} — vaga {{ titulo }}</div>
+  <p>Prezados(as),</p>
+  {% for par in carta.split('\n\n') %}<p>{{ par }}</p>{% endfor %}
+  <div class="ass">Atenciosamente,
+{{ candidato.nome }}</div>
+</body>
+</html>

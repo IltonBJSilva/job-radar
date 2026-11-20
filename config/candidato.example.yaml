@@ -1,0 +1,75 @@
+# Perfil do candidato — copie para config/candidato.yaml e preencha.
+#   (config/candidato.yaml fica fora do Git: seus dados não vão para o GitHub)
+#
+# REGRA DE OURO: escreva aqui SÓ o que é verdade. O sistema adapta o currículo
+# para cada vaga reordenando e destacando estes dados — ele nunca inventa
+# experiência, tecnologia ou número. Quanto mais completo, melhor a adaptação.
+
+pessoal:
+  nome: "Seu Nome Completo"
+  titulo: "Desenvolvedor Backend | Python • Node.js • Cloud"
+  email: "seu.email@gmail.com"
+  telefone: "+55 (34) 90000-0000"
+  cidade: "Uberlândia - MG"
+
+links:
+  linkedin: "https://www.linkedin.com/in/seu-perfil"
+  github: "https://github.com/seu-usuario"
+  portfolio: "https://seu-portfolio.dev"
+
+resumo: >
+  Desenvolvedor Backend com experiência em APIs REST com Python (FastAPI, Django)
+  e Node.js, bancos SQL/NoSQL, Docker e deploy em nuvem (GCP). Foco em código
+  testável, automação e entrega contínua.
+
+# Agrupe como quiser. Tudo aqui é considerado na compatibilidade com a vaga.
+habilidades:
+  Linguagens: [Python, JavaScript, TypeScript, SQL]
+  Backend: [FastAPI, Django, Flask, Node.js, Express, REST, GraphQL]
+  Dados: [PostgreSQL, MySQL, MongoDB, Redis, SQLite]
+  Cloud & DevOps: [Docker, GCP, GitHub Actions, CI/CD, Linux]
+  Testes & Qualidade: [Pytest, Jest, TDD]
+
+experiencias:
+  - cargo: "Desenvolvedor Backend"
+    empresa: "Empresa Exemplo"
+    periodo: "jan/2024 – atual"
+    local: "Remoto"
+    tecnologias: [Python, FastAPI, PostgreSQL, Docker, GCP]
+    conquistas:
+      - "Desenvolvi APIs REST em FastAPI consumidas por 3 aplicações internas."
+      - "Automatizei deploy com GitHub Actions e Docker, reduzindo o tempo de entrega."
+      - "Escrevi testes com Pytest cobrindo os fluxos críticos de pagamento."
+
+projetos:
+  - nome: "JobRadar"
+    descricao: "Monitor de vagas com scraping em 10+ fontes, filtro semântico, SQLite e notificações no Telegram, rodando grátis no GitHub Actions."
+    link: "https://github.com/seu-usuario/job-radar"
+    tecnologias: [Python, Playwright, SQLite, GitHub Actions, Flask]
+
+formacao:
+  - curso: "Análise e Desenvolvimento de Sistemas"
+    instituicao: "Sua Faculdade"
+    periodo: "2021 – 2023"
+
+certificacoes:
+  - "Google Cloud Digital Leader"
+
+idiomas:
+  - "Português — nativo"
+  - "Inglês — intermediário (leitura técnica)"
+
+# Usado no e-mail e na carta.
+preferencias:
+  # Cargos que você quer. Vagas com esses termos no título ganham score alto.
+  cargos_alvo: [backend, back-end, desenvolvedor python, python developer, node.js, software engineer, engenheiro de software, full stack]
+  # Termos buscados no Remotar (vagas remotas) ao clicar em "Buscar vagas novas".
+  termos_remotar: [python, backend, node]
+  modalidade: "Remoto ou híbrido em Uberlândia"
+  pretensao: ""          # opcional; deixe vazio para não citar
+  disponibilidade: "imediata"
+
+assinatura_email: |
+  Seu Nome
+  +55 (34) 90000-0000
+  linkedin.com/in/seu-perfil · github.com/seu-usuario

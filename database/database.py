@@ -138,6 +138,16 @@ def _garantir_coluna_feedback(conn):
         conn.execute("ALTER TABLE vagas_vistas ADD COLUMN feedback TEXT")
 
 
+def _garantir_coluna_descricao(conn):
+    """Migração leve: descrição da vaga (Job.texto). É a matéria-prima do
+    módulo de candidatura — adaptar currículo e achar e-mail de contato
+    dependem dela. Linha antiga fica NULL; a candidatura baixa a descrição
+    pelo link quando precisar."""
+    colunas = [linha[1] for linha in conn.execute("PRAGMA table_info(vagas_vistas)")]
+    if "descricao" not in colunas:
+        conn.execute("ALTER TABLE vagas_vistas ADD COLUMN descricao TEXT")
+
+
 class BancoVazioSuspeito(RuntimeError):
     """jobs.db já existia em disco (tinha conteúdo) mas a tabela veio vazia
     depois de iniciar_db() — não é primeiro uso, é banco perdido/corrompido/
@@ -168,6 +178,7 @@ def iniciar_db():
         _garantir_colunas_digest(conn)
         _garantir_coluna_situacao(conn)
         _garantir_coluna_feedback(conn)
+        _garantir_coluna_descricao(conn)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_vagas_digest_pendente "
             "ON vagas_vistas (perfil, digest_pendente)"
@@ -248,13 +259,14 @@ def salvar_vaga(job, perfil_chave: str = "", digest_pendente: bool = False, expl
             """
             INSERT OR IGNORE INTO vagas_vistas
                 (id, titulo, empresa, local, link, site, chave_secundaria, publicado_em,
-                 modalidade, relevancia, perfil, digest_pendente, exploratoria, situacao)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 modalidade, relevancia, perfil, digest_pendente, exploratoria, situacao, descricao)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job.id, job.titulo, job.empresa, job.local, job.link, job.site,
                 job.chave_secundaria, job.publicado_em, job.modalidade,
                 job.relevancia, perfil_chave, int(digest_pendente), int(exploratoria), "nova",
+                (getattr(job, "texto", "") or "")[:20000],
             ),
         )
 

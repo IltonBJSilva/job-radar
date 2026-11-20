@@ -180,17 +180,56 @@ class Analise:
         return f"Você tem {len(self.em_comum)} de {len(self.pedidas)} tecnologias citadas."
 
 
+# Quem declara X também atende Y (Kafka -> Mensageria). Só vale para o
+# SCORE: o texto do CV/carta continua usando apenas o que você escreveu.
+IMPLICA = {
+    "Kafka": {"Mensageria"}, "RabbitMQ": {"Mensageria"}, "Celery": {"Mensageria"},
+    "Django": {"Python"}, "FastAPI": {"Python"}, "Flask": {"Python"}, "Pandas": {"Python"},
+    "Express": {"Node.js"}, "NestJS": {"Node.js", "TypeScript"},
+    "React": {"JavaScript"}, "Next.js": {"React", "JavaScript"}, "Vue": {"JavaScript"},
+    "Spring": {"Java"}, "Laravel": {"PHP"}, "Rails": {"Ruby"},
+    "Kubernetes": {"Docker"}, "PostgreSQL": {"SQL"}, "MySQL": {"SQL"}, "SQL Server": {"SQL"},
+}
+
+NIVEIS = ["Estágio", "Júnior", "Pleno", "Sênior", "Especialista"]
+
+_NIVEL_IDIOMA_OK = ("intermedi", "avancad", "fluente", "fluent", "nativ", "b2", "c1", "c2", "proficien")
+
+
+def _idioma_suficiente(idiomas: str, nome: tuple[str, ...]) -> bool:
+    for linha in idiomas.split("|"):
+        if any(n in linha for n in nome) and any(n in linha for n in _NIVEL_IDIOMA_OK):
+            return True
+    return False
+
+
+def idioma_da_vaga(texto: str) -> str:
+    """'en' quando a descrição está claramente em inglês, senão 'pt'."""
+    palavras = re.findall(r"[a-z]+", normalizar(texto))
+    if len(palavras) < 40:
+        return "pt"
+    en = sum(1 for p in palavras if p in {"the", "and", "you", "with", "our", "will", "for", "are", "your", "we"})
+    pt = sum(1 for p in palavras if p in {"de", "e", "com", "para", "voce", "nossa", "nosso", "em", "da", "do", "que"})
+    return "en" if en > pt * 1.5 else "pt"
+
+
+def nivel_do_candidato(candidato: Candidato) -> str:
+    return (candidato.preferencias or {}).get("senioridade") or detectar_senioridade(candidato.titulo)
+
+
 def analisar(candidato: Candidato, titulo: str, descricao: str) -> Analise:
     texto_vaga = f"{titulo}\n{descricao}"
     pedidas = extrair_tecnologias(texto_vaga)
     perfil = {canonizar(h) for h in candidato.todas_habilidades}
     perfil |= set(extrair_tecnologias(" ".join(candidato.todas_habilidades)))
+    for t in list(perfil):
+        perfil |= IMPLICA.get(t, set())
 
-    # Idiomas declarados contam como habilidade.
-    idiomas = normalizar(" ".join(candidato.idiomas))
-    if "ingles" in idiomas or "english" in idiomas:
+    # Idioma só conta a partir de intermediário ("Inglês — básico" não atende B2).
+    idiomas = "|".join(normalizar(i) for i in candidato.idiomas)
+    if _idioma_suficiente(idiomas, ("ingles", "english")):
         perfil.add("Inglês")
-    if "espanhol" in idiomas or "spanish" in idiomas:
+    if _idioma_suficiente(idiomas, ("espanhol", "spanish")):
         perfil.add("Espanhol")
 
     em_comum = [t for t in pedidas if t in perfil]
@@ -217,12 +256,28 @@ def analisar(candidato: Candidato, titulo: str, descricao: str) -> Analise:
         cargo = 60
     else:
         cargo = 15
+    # "Desenvolvedor Backend (Java)" para quem não tem Java: o cargo bate,
+    # mas a tecnologia central do título não.
+    if no_titulo - perfil - GENERICAS:
+        cargo = min(cargo, 30)
 
-    score = round(0.55 * cobertura + 0.45 * cargo)
+    score = 0.55 * cobertura + 0.45 * cargo
+
+    # Pouca informação (vaga sem descrição) não pode virar score alto.
+    if len(pedidas) < 3:
+        score = min(score, 55)
+
+    # Senioridade: júnior em vaga sênior (ou o contrário) perde pontos.
+    senioridade = detectar_senioridade(titulo)
+    meu = nivel_do_candidato(candidato)
+    if senioridade in NIVEIS and meu in NIVEIS:
+        distancia = abs(NIVEIS.index(senioridade) - NIVEIS.index(meu))
+        score -= {0: 0, 1: 8}.get(distancia, 22)
+
     return Analise(
-        score=max(0, min(100, score)),
+        score=max(0, min(100, round(score))),
         em_comum=em_comum,
         faltando=faltando,
         pedidas=pedidas,
-        senioridade=detectar_senioridade(titulo),
+        senioridade=senioridade,
     )

@@ -14,7 +14,9 @@
   .contato span + span::before { content: "  •  "; color: #a0a8bb; }
   h2 { font-size: 10.5pt; text-transform: uppercase; letter-spacing: 1.2px; color: #2f5bd3; border-bottom: 1.5px solid #dfe5f5; padding-bottom: 3px; margin: 15px 0 7px; }
   p { margin: 0 0 4px; }
-  .skills div { margin-bottom: 3px; }
+  .skills { list-style: none; margin: 0; padding: 0; }
+  .skills li { margin-bottom: 3px; }
+  .nome { font-weight: 700; }
   .skills b.grupo { color: #1d2433; }
   .hl { font-weight: 700; color: #12307f; }
   .item { margin-bottom: 9px; page-break-inside: avoid; }
@@ -47,21 +49,21 @@
 
   {% if c.grupos %}
   <h2>Competências técnicas</h2>
-  <div class="skills">
+  <ul class="skills">
     {% for g in c.grupos %}
-    <div><b class="grupo">{{ g.nome }}:</b>
-      {% for nome, destaque in g.itens %}{% if destaque %}<span class="hl">{{ nome }}</span>{% else %}{{ nome }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
-    </div>
+    <li><b class="grupo">{{ g.nome }}:</b>
+      {% for nome, destaque in g.itens %}{% if destaque %}<span class="hl">{{ nome }}</span>{% else %}{{ nome }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}.
+    </li>
     {% endfor %}
-  </div>
+  </ul>
   {% endif %}
 
   {% if c.experiencias %}
   <h2>Experiência profissional</h2>
   {% for e in c.experiencias %}
   <div class="item">
-    <div class="item-topo"><span class="nome">{{ e.cargo }} — {{ e.empresa }}</span><span class="quando">{{ e.periodo }}</span></div>
-    {% if e.local %}<div class="sub">{{ e.local }}</div>{% endif %}
+    <div class="nome">{{ e.cargo }} — {{ e.empresa }}</div>
+    <div class="sub">{{ e.periodo }}{% if e.local %} · {{ e.local }}{% endif %}</div>
     {% if e.conquistas %}<ul>{% for x in e.conquistas %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
     {% if e.tecnologias %}<div class="tec">{{ e.tecnologias | join(' · ') }}</div>{% endif %}
   </div>

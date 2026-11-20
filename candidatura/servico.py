@@ -10,7 +10,7 @@ from datetime import datetime
 
 from candidatura import config, repositorio
 from candidatura.adaptador import montar_pacote
-from candidatura.compatibilidade import analisar
+from candidatura.compatibilidade import analisar, idioma_da_vaga
 from candidatura.contato import buscar_descricao, email_valido, emails_com_relevancia, extrair_emails
 from candidatura.documentos import GeradorPDF, html_carta, html_curriculo, pasta_da_vaga, slug
 from candidatura.envio import ErroConexao, ErroEnvio, ErroFatalSMTP, enviar_smtp, montar_mensagem, salvar_eml
@@ -84,7 +84,9 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
         pacote = montar_pacote(candidato, {**vaga, "descricao": descricao}, analise, usar_ia=usar_ia)
 
         pasta = pasta_da_vaga(vaga)
-        nome = slug(candidato.nome, 30).replace("-", "_").title() or "Candidato"
+        partes_nome = candidato.nome.split()
+        nome_arquivo = " ".join([partes_nome[0], partes_nome[-1]]) if len(partes_nome) > 2 else candidato.nome
+        nome = slug(nome_arquivo, 40).replace("-", "_").title() or "Candidato"
         html_cv = html_curriculo(pacote.curriculo)
         html_ct = html_carta(candidato, pacote.carta, vaga["titulo"], vaga.get("empresa") or "")
         (pasta / "curriculo.html").write_text(html_cv, encoding="utf-8")
@@ -98,6 +100,10 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
             g.gerar(html_ct, carta_pdf)
 
         status = "pronta" if destino and email_valido(destino) else "manual"
+        aviso = None
+        if idioma_da_vaga(descricao) == "en":
+            # CV/carta saem em português: enviar sem revisão eliminaria a candidatura.
+            status, aviso = "manual", "Vaga em inglês: revise e traduza CV/carta antes de enviar."
         # Você pode ter desfeito/descartado enquanto o PDF era gerado: nesse
         # caso os arquivos ficam salvos, mas a vaga NÃO entra na fila de envio.
         agora = repositorio.obter(id_) or {}
@@ -122,7 +128,7 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
             cv_path=str(cv_pdf),
             carta_path=str(carta_pdf),
             status=status,
-            erro=None,
+            erro=aviso,
         )
         logger.info(f"[Candidatura] Preparada ({status}, {analise.score}%): {vaga['titulo']} — {vaga.get('empresa')}")
     except Exception as e:

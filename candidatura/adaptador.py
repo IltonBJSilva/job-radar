@@ -54,8 +54,7 @@ def _ordenar_habilidades(candidato: Candidato, analise: Analise) -> list[GrupoHa
         # Estável: destacadas primeiro, mantendo a sua ordem original dentro de cada bloco.
         marcados.sort(key=lambda x: not x[1])
         grupos.append(GrupoHabilidades(nome, marcados))
-    # Grupo com mais destaques sobe.
-    grupos.sort(key=lambda g: -sum(1 for _, d in g.itens if d))
+    # A ordem dos GRUPOS é a sua (Linguagens antes de Práticas etc.).
     return grupos
 
 
@@ -107,14 +106,11 @@ def _titulo_adaptado(candidato: Candidato, declaradas: list[str]) -> str:
     return f"{base} | {' • '.join(chaves)}" if chaves else candidato.titulo
 
 
-def _resumo_padrao(candidato: Candidato, declaradas: list[str], titulo_vaga: str) -> str:
+def _resumo_padrao(candidato: Candidato, declaradas: list[str], score: int) -> str:
+    """Seu resumo + as tecnologias em comum, só quando a vaga é aderente."""
     resumo = candidato.resumo
-    chaves = declaradas[:5]
-    if chaves:
-        resumo = (resumo.rstrip(". ") + ". " if resumo else "") + (
-            f"Experiência prática com {', '.join(chaves[:-1]) + ' e ' + chaves[-1] if len(chaves) > 1 else chaves[0]}, "
-            f"alinhada ao que a posição de {titulo_vaga} exige."
-        )
+    if declaradas and score >= 60:
+        resumo = (resumo.rstrip(". ") + ". " if resumo else "") + f"Principais tecnologias: {_lista_humana(declaradas[:5])}."
     return resumo
 
 
@@ -129,37 +125,99 @@ def _minuscula_inicial(texto: str) -> str:
     return texto[:1].lower() + texto[1:] if texto else ""
 
 
-def _carta_padrao(candidato: Candidato, analise: Analise, declaradas: list[str], titulo: str, empresa: str) -> str:
-    empresa_txt = empresa if empresa and empresa.lower() not in {"não informado", "confidencial"} else "sua empresa"
-    chaves = declaradas[:4]
+_EMPRESAS_SEM_NOME = {"", "não informado", "nao informado", "confidencial", "empresa confidencial", "sigilosa"}
 
-    p1 = (
-        f"Tenho interesse na vaga de {titulo} na {empresa_txt}. "
-        f"Atuo como {candidato.titulo.split('|')[0].strip().lower() or 'desenvolvedor'}"
-        + (f" e trabalho no dia a dia com {_lista_humana(chaves)}, tecnologias citadas na descrição da vaga." if chaves else ".")
-    )
+
+def nome_empresa(empresa: str) -> str:
+    """'LOJAS TRÊS PASSOS' -> 'Lojas Três Passos'; vazio/confidencial -> ''."""
+    empresa = (empresa or "").strip()
+    if empresa.lower() in _EMPRESAS_SEM_NOME:
+        return ""
+    return empresa.title() if empresa.isupper() and len(empresa) > 4 else empresa
+
+
+def titulo_curto(titulo: str, maximo: int = 60) -> str:
+    """Tira '(Venda Direta)', '[Remoto]', '- Remote Work | REF#...' do título."""
+    import re
+
+    t = re.sub(r"\s*[\(\[].*?[\)\]]", "", titulo or "")
+    t = re.split(r"\s+[-|/]\s+(?=(home office|remot|hybrid|h[ií]brido|ref|presencial))", t, flags=re.I)[0]
+    t = " ".join(t.split()).strip(" -|/")
+    return t if len(t) <= maximo else t[:maximo].rsplit(" ", 1)[0]
+
+
+def _recentes(candidato: Candidato) -> set[str]:
+    """Tecnologias das 2 experiências mais recentes (ou de todas as
+    habilidades, se você não listou tecnologias por experiência)."""
+    techs = [t for e in candidato.experiencias[:2] for t in e.tecnologias]
+    return {t.lower() for t in techs} if techs else {h.lower() for h in candidato.todas_habilidades}
+
+
+def _carta_padrao(candidato: Candidato, analise: Analise, declaradas: list[str], titulo: str, empresa: str) -> str:
+    """Sem artigo antes da empresa ("na Itaú"/"no Nubank" erram com facilidade)
+    e sem afirmar uso atual de tecnologia que você só usou no passado."""
+    empresa_txt = nome_empresa(empresa)
+    titulo_txt = titulo_curto(titulo)
+    atuais = [t for t in declaradas if t.lower() in _recentes(candidato)][:4]
+    papel = candidato.titulo.split("|")[0].strip()
+
+    p1 = f"Gostaria de me candidatar à vaga de {titulo_txt}" + (f" ({empresa_txt})" if empresa_txt else "") + "."
+    if papel:
+        p1 += f" Sou {papel[0].lower() + papel[1:]}" + (f" e trabalho atualmente com {_lista_humana(atuais)}." if atuais else ".")
 
     evidencias = []
     for e in candidato.experiencias[:2]:
         melhor = sorted((c for c in e.conquistas if c and c.strip()), key=lambda c: -_relevancia(c, analise.pedidas))
         if melhor and e.empresa:
-            evidencias.append(f"na {e.empresa}, {_minuscula_inicial(melhor[0])}")
+            evidencias.append(f"{e.empresa}: {_minuscula_inicial(melhor[0])}")
     if not evidencias and candidato.projetos:
         p = _ordenar_projetos(candidato, analise, 1)[0]
         if p.descricao and p.descricao.strip():
-            evidencias.append(f"no projeto {p.nome}, {_minuscula_inicial(p.descricao)}")
-    p2 = ("Alguns exemplos do que já entreguei: " + "; ".join(evidencias) + ".") if evidencias else ""
+            evidencias.append(f"projeto {p.nome}: {_minuscula_inicial(p.descricao)}")
+    p2 = ("Alguns resultados recentes — " + "; ".join(evidencias) + ".") if evidencias else ""
 
-    prefs = candidato.preferencias or {}
-    disp = prefs.get("disponibilidade")
-    p3 = (
-        "Envio em anexo meu currículo"
-        + (" e deixo abaixo os links do meu portfólio" if candidato.links else "")
-        + ". Ficarei feliz em conversar sobre como posso contribuir com o time"
-        + (f" — tenho disponibilidade {disp}" if disp else "")
-        + "."
-    )
+    disp = (candidato.preferencias or {}).get("disponibilidade")
+    p3 = ("Seguem em anexo meu currículo e esta carta. Terei prazer em conversar sobre como posso contribuir com o time"
+          + (f"; minha disponibilidade para início é {disp}" if disp else "") + ".")
     return "\n\n".join(p for p in (p1, p2, p3) if p)
+
+
+_ROTULOS_LINKS = {"linkedin": "LinkedIn", "github": "GitHub", "portfolio": "Portfólio", "site": "Site",
+                  "gitlab": "GitLab", "behance": "Behance"}
+
+
+def _primeiro_ultimo(nome: str) -> str:
+    partes = nome.split()
+    return " ".join([partes[0], partes[-1]]) if len(partes) > 2 else nome
+
+
+def _corpo_email(candidato: Candidato, titulo: str, empresa: str, declaradas: list[str], analise: Analise) -> str:
+    """E-mail curto: a carta completa vai em anexo (não repetir o mesmo texto)."""
+    empresa_txt = nome_empresa(empresa)
+    atuais = [t for t in declaradas if t.lower() in _recentes(candidato)][:3]
+    papel = candidato.titulo.split("|")[0].strip()
+    destaque = ""
+    for e in candidato.experiencias[:1]:
+        melhor = sorted((c for c in e.conquistas if c and c.strip()), key=lambda c: -_relevancia(c, analise.pedidas))
+        if melhor:
+            destaque = f" Recentemente, {_minuscula_inicial(melhor[0])}."
+    linhas = [
+        "Olá,",
+        "",
+        f"Gostaria de me candidatar à vaga de {titulo_curto(titulo)}" + (f" ({empresa_txt})" if empresa_txt else "") + ". "
+        + (f"Sou {papel[0].lower() + papel[1:]}" if papel else "Tenho experiência em desenvolvimento")
+        + (f", com experiência atual em {_lista_humana(atuais)}." if atuais else ".")
+        + destaque,
+        "",
+        "Envio em anexo meu currículo e uma carta de apresentação. Fico à disposição para conversar.",
+        "",
+        "Atenciosamente,",
+    ]
+    assinatura = candidato.assinatura_email or "\n".join(
+        x for x in [candidato.nome, candidato.telefone,
+                    *[f"{_ROTULOS_LINKS.get(k.lower(), k.capitalize())}: {v}" for k, v in candidato.links.items()]] if x
+    )
+    return "\n".join(linhas) + "\n" + assinatura.strip() + "\n"
 
 
 def montar_pacote(candidato: Candidato, vaga: dict, analise: Analise, usar_ia: bool = True) -> Pacote:
@@ -178,8 +236,8 @@ def montar_pacote(candidato: Candidato, vaga: dict, analise: Analise, usar_ia: b
 
     curriculo = CurriculoAdaptado(
         candidato=candidato,
-        titulo=_titulo_adaptado(candidato, declaradas),
-        resumo=resumo or _resumo_padrao(candidato, declaradas, titulo_vaga),
+        titulo=_titulo_adaptado(candidato, [t for t in declaradas if t.lower() in _recentes(candidato)] or declaradas),
+        resumo=resumo or _resumo_padrao(candidato, declaradas, analise.score),
         grupos=_ordenar_habilidades(candidato, analise),
         experiencias=_ordenar_experiencias(candidato, analise),
         projetos=_ordenar_projetos(candidato, analise),
@@ -187,13 +245,6 @@ def montar_pacote(candidato: Candidato, vaga: dict, analise: Analise, usar_ia: b
     )
     carta = carta or _carta_padrao(candidato, analise, declaradas, titulo_vaga, empresa)
 
-    assunto = f"Candidatura: {titulo_vaga} — {candidato.nome}"
-    links = "\n".join(f"{k.capitalize()}: {v}" for k, v in candidato.links.items())
-    corpo = (
-        "Olá, tudo bem?\n\n"
-        f"{carta}\n\n"
-        + (f"{links}\n\n" if links else "")
-        + "Atenciosamente,\n"
-        + (candidato.assinatura_email or f"{candidato.nome}\n{candidato.telefone}\n{candidato.email}")
-    )
-    return Pacote(curriculo=curriculo, carta=carta, assunto=assunto, corpo_email=corpo.strip() + "\n", usou_ia=usou_ia)
+    assunto = f"Candidatura: {titulo_curto(titulo_vaga)} — {_primeiro_ultimo(candidato.nome)}"
+    corpo = _corpo_email(candidato, titulo_vaga, empresa, declaradas, analise)
+    return Pacote(curriculo=curriculo, carta=carta, assunto=assunto, corpo_email=corpo, usou_ia=usou_ia)

@@ -549,3 +549,95 @@ def test_mesma_vaga_em_dois_repos_entra_uma_vez(banco):
     v2 = issue_para_vaga({**base, "title": "[Remoto] Dev Python na Rotha IA", "html_url": "https://github.com/b/v/issues/9"}, "b/v")
     assert repositorio.inserir(v1)
     assert repositorio.existe_semelhante(v2["titulo"], v2["email_destino"], v2["empresa"])
+
+
+# ----------------------------------- regressões: qualidade dos documentos
+
+SENIOR = dict(PERFIL, pessoal={"nome": "Rafael Augusto Bittencourt de Oliveira", "titulo": "Engenheiro de Software Sênior",
+                               "email": "r@x.dev"},
+              habilidades={"Linguagens": ["Python", "Java"], "Práticas": ["TDD"]},
+              experiencias=[
+                  {"cargo": "Eng", "empresa": "Nubank", "tecnologias": ["Python"], "conquistas": ["Criei APIs em Python."]},
+                  {"cargo": "Eng", "empresa": "Mercado Livre", "tecnologias": ["Python"], "conquistas": ["Escalei serviços."]},
+                  {"cargo": "Dev", "empresa": "Totvs", "periodo": "2014 – 2016", "tecnologias": ["Java"],
+                   "conquistas": ["Mantive sistema Java."]},
+              ])
+
+
+def test_carta_nao_afirma_uso_atual_de_tecnologia_antiga():
+    c = candidato_de_dict(SENIOR)
+    vaga = {"titulo": "Desenvolvedor Java Sênior", "empresa": "BHS", "descricao": "Java, Spring e TDD. " * 5}
+    pacote = montar_pacote(c, vaga, analisar(c, vaga["titulo"], vaga["descricao"]), usar_ia=False)
+    assert "atualmente com Java" not in pacote.carta
+    assert "citadas na descrição" not in pacote.carta
+
+
+@pytest.mark.parametrize("empresa", ["Grupo Boticário", "Itaú Unibanco", "Nubank"])
+def test_carta_sem_artigo_errado_antes_da_empresa(candidato, empresa):
+    vaga = {"titulo": "Dev Python", "empresa": empresa, "descricao": "Python"}
+    pacote = montar_pacote(candidato, vaga, analisar(candidato, "Dev Python", "Python"), usar_ia=False)
+    assert f"na {empresa}" not in pacote.carta and f"no {empresa}" not in pacote.carta
+    assert f"({empresa})" in pacote.carta
+
+
+def test_email_curto_nao_repete_a_carta(candidato):
+    vaga = {"titulo": "Dev Python", "empresa": "ACME", "descricao": "Python e Django"}
+    pacote = montar_pacote(candidato, vaga, analisar(candidato, "Dev Python", "Python e Django"), usar_ia=False)
+    assert pacote.carta not in pacote.corpo_email
+    assert "GitHub: https://github.com/ana" in pacote.corpo_email
+
+
+def test_assunto_curto_e_nome_reduzido():
+    c = candidato_de_dict(SENIOR)
+    titulo = "Pessoa Desenvolvedora BackEnd Python/ NodeJs Especialista I (Venda Direta)"
+    pacote = montar_pacote(c, {"titulo": titulo, "empresa": "X", "descricao": ""}, analisar(c, titulo, ""), usar_ia=False)
+    assert "(Venda Direta)" not in pacote.assunto
+    assert pacote.assunto.endswith("Rafael Oliveira")
+
+
+def test_empresa_em_caixa_alta_vira_titulo(candidato):
+    from candidatura.adaptador import nome_empresa
+
+    assert nome_empresa("LOJAS TRÊS PASSOS") == "Lojas Três Passos"
+    assert nome_empresa("IBM") == "IBM"
+    assert nome_empresa("Confidencial") == ""
+
+
+def test_score_vaga_de_outra_stack_com_cargo_igual(candidato):
+    a = analisar(candidato, "Desenvolvedor Backend (Java)", "Java, Spring Boot, Maven, JUnit, Kafka")
+    assert a.score < 45
+
+
+def test_score_vaga_sem_descricao_nao_passa_do_automatico(candidato):
+    assert analisar(candidato, "Desenvolvedor Python", "").score <= 55
+
+
+def test_score_penaliza_senioridade_distante():
+    junior = candidato_de_dict(dict(PERFIL, pessoal={"nome": "J", "titulo": "Desenvolvedora Backend Júnior", "email": "j@x.dev"}))
+    desc = "Python, Django, PostgreSQL, Docker e Redis."
+    assert analisar(junior, "Desenvolvedor Backend Python Sênior", desc).score + 15 < \
+        analisar(junior, "Desenvolvedor Backend Python Júnior", desc).score
+
+
+def test_ingles_basico_nao_atende_vaga_que_pede_ingles():
+    c = candidato_de_dict(dict(PERFIL, idiomas=["Inglês — básico"]))
+    assert "Inglês" in analisar(c, "Dev", "Inglês avançado obrigatório").faltando
+
+
+def test_kafka_declarado_atende_mensageria():
+    c = candidato_de_dict(dict(PERFIL, habilidades={"Backend": ["Python", "Kafka"]}))
+    assert "Mensageria" in analisar(c, "Dev", "Experiência com mensageria e Python").em_comum
+
+
+def test_vaga_em_ingles_nao_fica_pronta_para_envio(banco, candidato, monkeypatch):
+    class FakePDF:
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def gerar(self, html, destino): Path(destino).write_bytes(b"%PDF")
+
+    monkeypatch.setattr(servico, "GeradorPDF", FakePDF)
+    desc = ("We are looking for a Python developer to join our team. You will work with our clients and "
+            "you are expected to build services with Django. Send your resume to jobs@acme.com. ") * 4
+    repositorio.inserir({"id": "en1", "titulo": "Python Developer", "empresa": "ACME", "status": "curtida", "descricao": desc})
+    v = servico.preparar("en1", candidato, usar_ia=False)
+    assert v["status"] == "manual" and "inglês" in v["erro"]

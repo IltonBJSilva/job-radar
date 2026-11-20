@@ -3,7 +3,11 @@ import logging
 import os
 import sys
 
-_LOG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "jobradar.log")
+# JOBRADAR_LOG_PATH permite apontar para outro arquivo (os testes usam um
+# temporário para não misturar linhas falsas no log real de produção).
+_LOG_PATH = os.getenv("JOBRADAR_LOG_PATH") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "jobradar.log"
+)
 
 
 def get_logger(name: str = "jobradar") -> logging.Logger:

@@ -186,6 +186,8 @@ def criar_app() -> Flask:
 
     @app.get("/arquivo/<id_>/<tipo>")
     def arquivo(id_, tipo):
+        if tipo not in ("cv", "carta"):
+            abort(404)
         v = repositorio.obter(id_) or abort(404)
         caminho = v.get("cv_path") if tipo == "cv" else v.get("carta_path")
         if not caminho or not Path(caminho).exists():

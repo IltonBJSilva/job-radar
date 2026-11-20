@@ -164,8 +164,15 @@ def enviadas_hoje(incluir_simuladas: bool = False) -> int:
         return conn.execute(sql, (hoje,)).fetchone()[0]
 
 
+EMPRESAS_GENERICAS = {"", "confidencial", "empresa confidencial", "nao informado", "não informado",
+                      "sigilosa", "empresa sigilosa", "remoto", "n/a", "-"}
+
+
 def ja_contatado(email: str, empresa: str, dias: int, ignorar_id: str = "") -> bool:
-    """True se já enviamos (de verdade) para este e-mail ou empresa na janela."""
+    """True se já enviamos (de verdade) para este e-mail ou empresa na janela.
+    Empresa genérica ("Confidencial") só bloqueia pelo e-mail."""
+    if (empresa or "").strip().lower() in EMPRESAS_GENERICAS:
+        empresa = ""
     limite = (datetime.now() - timedelta(days=dias)).isoformat(timespec="seconds")
     with conectar() as conn:
         linha = conn.execute(
@@ -202,6 +209,7 @@ def importar_do_radar(limite: int = 2000, radar_db: str | None = None) -> int:
                        'radar', v.publicado_em, COALESCE({desc}, '')
                 FROM radar.vagas_vistas v
                 WHERE NOT EXISTS (SELECT 1 FROM candidaturas c WHERE c.id = v.id)
+                  {"AND COALESCE(v.feedback, '') != 'negativo'" if "feedback" in colunas else ""}
                 ORDER BY v.encontrada_em DESC
                 LIMIT ?
                 """,

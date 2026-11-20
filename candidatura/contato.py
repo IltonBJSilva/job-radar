@@ -27,39 +27,61 @@ _PREFIXOS_IGNORADOS = (
 _DOMINIOS_IGNORADOS = (
     "example.com", "exemplo.com", "email.com", "domain.com", "sentry.io", "linkedin.com",
     "gupy.io", "solides.com.br", "indeed.com", "catho.com.br", "github.com", "users.noreply.github.com",
-    "wixpress.com", "sentry.wixpress.com",
+    "wixpress.com", "sentry.wixpress.com", "remotar.com.br", "programathor.com.br", "trampos.co",
+    "geekhunter.com.br", "99jobs.com", "infojobs.com.br", "vagas.com.br", "glassdoor.com",
+)
+_EXTENSOES_ARQUIVO = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".bmp", ".ico", ".pdf")
+_RE_EMAIL_ESTRITO = re.compile(
+    r"[a-z0-9_%+-]+(?:\.[a-z0-9_%+-]+)*@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,24}"
 )
 _PALAVRAS_CANDIDATURA = ("curriculo", "currículo", "cv", "candidat", "envie", "enviar", "resume", "apply", "vaga", "rh", "talent", "recrut", "jobs", "carreira")
 
 
 def email_valido(email: str) -> bool:
     email = (email or "").strip().lower()
-    if not _RE_EMAIL.fullmatch(email):
+    if not _RE_EMAIL_ESTRITO.fullmatch(email):
         return False
     usuario, dominio = email.rsplit("@", 1)
     if any(usuario.startswith(p) for p in _PREFIXOS_IGNORADOS):
         return False
     if any(dominio == d or dominio.endswith("." + d) for d in _DOMINIOS_IGNORADOS):
         return False
-    if dominio.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")):
+    if dominio.endswith(_EXTENSOES_ARQUIVO):
         return False
     return True
 
 
-def extrair_emails(texto: str) -> list[str]:
-    """E-mails válidos do texto, priorizando os que aparecem perto de
-    palavras como "currículo", "envie", "candidatura"."""
+def _cortar_texto_colado(email: str) -> str:
+    """'vagas@empresa.com.brRequisitos' -> 'vagas@empresa.com.br' (HTML sem espaço)."""
+    usuario, _, dominio = email.rpartition("@")
+    partes = dominio.split(".")
+    m = re.match(r"[a-z]+(?=[A-Z])", partes[-1])
+    if m and len(m.group(0)) >= 2:
+        partes[-1] = m.group(0)
+    return f"{usuario}@{'.'.join(partes)}"
+
+
+def emails_com_relevancia(texto: str) -> dict[str, int]:
+    """{email: relevância}. Relevância 0 = e-mail que não parece de recrutamento
+    (ex.: comercial@, etica@) — o modo automático não envia para esses."""
     if not texto:
-        return []
+        return {}
     candidatos: dict[str, int] = {}
     for m in _RE_EMAIL.finditer(texto):
-        email = m.group(0).strip(".").lower()
+        email = _cortar_texto_colado(m.group(0).strip(".")).lower()
         if not email_valido(email):
             continue
         janela = texto[max(0, m.start() - 120): m.end() + 40].lower()
         relevancia = sum(1 for p in _PALAVRAS_CANDIDATURA if p in janela)
         relevancia += sum(1 for p in ("rh", "vagas", "jobs", "talent", "recrut", "carreira", "people") if p in email.split("@")[0])
         candidatos[email] = max(candidatos.get(email, 0), relevancia)
+    return candidatos
+
+
+def extrair_emails(texto: str) -> list[str]:
+    """E-mails válidos do texto, priorizando os que aparecem perto de
+    palavras como "currículo", "envie", "candidatura"."""
+    candidatos = emails_com_relevancia(texto)
     return sorted(candidatos, key=lambda e: -candidatos[e])
 
 

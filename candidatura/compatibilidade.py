@@ -53,7 +53,7 @@ VOCABULARIO: dict[str, list[str]] = {
     "Next.js": ["next.js", "nextjs"],
     "Vue": ["vue", "vue.js", "vuejs"],
     "Angular": ["angular"],
-    "REST": ["rest", "restful", "api rest", "apis rest"],
+    "REST": ["restful", "api rest", "apis rest", "rest api", "rest apis", "api restful", "apis restful"],
     "GraphQL": ["graphql"],
     "gRPC": ["grpc"],
     "Microsserviços": ["microsservicos", "microservicos", "microservices", "microsservico", "microservice"],
@@ -96,8 +96,15 @@ VOCABULARIO: dict[str, list[str]] = {
     "Espanhol": ["espanhol", "spanish"],
 }
 
+# Canônicos que, sozinhos, são palavra comum ("go-live", "rest of the team"):
+# só contam pelas variações explícitas.
+_CANONICO_AMBIGUO = {"Go", "REST"}
+
 _PADROES = {
-    canonico: [re.compile(r"(?<![\w.#/+-])" + re.escape(normalizar(v)) + r"(?![\w#+]|\.\w)") for v in variacoes + [canonico]]
+    canonico: [
+        re.compile(r"(?<![\w.#+-])" + re.escape(normalizar(v)) + r"(?![\w#+]|\.\w)")
+        for v in variacoes + ([] if canonico in _CANONICO_AMBIGUO else [canonico])
+    ]
     for canonico, variacoes in VOCABULARIO.items()
 }
 
@@ -119,6 +126,19 @@ def canonizar(termo: str) -> str:
     return achados[0] if achados else termo.strip()
 
 
+def termos_declarados(habilidades: list[str]) -> dict[str, str]:
+    """Nome canônico -> termo EXATAMENTE como você escreveu no perfil.
+
+    O texto do currículo/carta usa sempre o termo declarado: se o perfil diz
+    "MariaDB", a vaga que pede MySQL casa, mas o CV continua dizendo MariaDB.
+    """
+    mapa: dict[str, str] = {}
+    for h in habilidades:
+        for canonico in extrair_tecnologias(h) or [h.strip()]:
+            mapa.setdefault(canonico, h.strip())
+    return mapa
+
+
 def contar_ocorrencias(texto: str, tecnologias: list[str]) -> int:
     alvo = normalizar(texto)
     return sum(1 for t in tecnologias for p in _PADROES.get(t, []) if p.search(alvo))
@@ -134,7 +154,7 @@ SENIORIDADES = [
 
 
 def detectar_senioridade(titulo: str) -> str:
-    alvo = normalizar(titulo)
+    alvo = normalizar(titulo).replace("pl/sql", " ").replace("pl sql", " ")
     for nome, termos in SENIORIDADES:
         if any(re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", alvo) for t in termos):
             return nome

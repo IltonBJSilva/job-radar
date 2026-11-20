@@ -253,9 +253,143 @@ def test_preparar_sem_navegador(banco, candidato, monkeypatch):
 
     monkeypatch.setattr(servico, "GeradorPDF", FakePDF)
     monkeypatch.setattr(servico, "buscar_descricao", lambda link: "")
-    repositorio.inserir({"id": "p1", "titulo": "Dev Python", "empresa": "ACME", "link": "",
+    repositorio.inserir({"id": "p1", "titulo": "Dev Python", "empresa": "ACME", "link": "", "status": "curtida",
                          "descricao": "Python e Django. Currículo para jobs@acme.com" + " x" * 200})
     v = servico.preparar("p1", candidato, usar_ia=False)
     assert v["status"] == "pronta"
     assert v["email_destino"] == "jobs@acme.com"
     assert Path(v["cv_path"]).exists() and Path(v["carta_path"]).exists()
+
+
+# ------------------------------------------- regressões da revisão de código
+
+def test_cv_usa_o_termo_declarado_e_nao_o_sinonimo():
+    perfil = dict(PERFIL, habilidades={"Dados": ["MariaDB", "OpenSearch"], "Backend": ["Python"]})
+    c = candidato_de_dict(perfil)
+    vaga = {"titulo": "Backend Python", "empresa": "X", "descricao": "Python, MySQL e Elasticsearch"}
+    pacote = montar_pacote(c, vaga, analisar(c, vaga["titulo"], vaga["descricao"]), usar_ia=False)
+    texto = pacote.curriculo.titulo + pacote.curriculo.resumo + pacote.carta
+    assert "MariaDB" in texto and "OpenSearch" in texto
+    assert "MySQL" not in texto and "Elasticsearch" not in texto
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("C#/.NET", {"C#", ".NET"}), (".NET/C#", {"C#", ".NET"}), ("Node/Express", {"Node.js", "Express"}),
+])
+def test_tecnologias_separadas_por_barra(texto, esperado):
+    assert esperado <= set(extrair_tecnologias(texto))
+
+
+@pytest.mark.parametrize("texto, proibido", [("Apoio no go-live do projeto", "Go"),
+                                              ("Get some rest after the release", "REST")])
+def test_palavra_comum_nao_vira_tecnologia(texto, proibido):
+    assert proibido not in extrair_tecnologias(texto)
+
+
+def test_pl_sql_nao_e_pleno():
+    assert detectar_senioridade("Desenvolvedor PL/SQL") == ""
+    assert detectar_senioridade("Desenvolvedor PL") == "Pleno"
+
+
+@pytest.mark.parametrize("email", ["icon@3x.avif", "jose.@x.com", "rh@empresa..com", "vagas@remotar.com.br"])
+def test_emails_invalidos(email):
+    assert not email_valido(email)
+
+
+def test_email_colado_no_texto_seguinte():
+    assert extrair_emails("Envie para vagas@empresa.com.brRequisitos: Python") == ["vagas@empresa.com.br"]
+
+
+def test_carta_nao_quebra_com_campos_vazios():
+    perfil = dict(PERFIL, experiencias=[{"cargo": "Dev", "empresa": "ACME", "conquistas": ["", "  "]}],
+                  projetos=[{"nome": "P", "descricao": ""}])
+    c = candidato_de_dict(perfil)
+    montar_pacote(c, {"titulo": "Dev", "empresa": "X", "descricao": ""}, analisar(c, "Dev", ""), usar_ia=False)
+
+
+def test_envio_sem_anexo_no_disco_e_bloqueado(banco, candidato, monkeypatch):
+    monkeypatch.setattr(servico, "enviar_smtp", lambda msg: pytest.fail("não podia enviar"))
+    id_ = _vaga_pronta(banco)
+    Path(repositorio.obter(id_)["cv_path"]).unlink()
+    with pytest.raises(ErroEnvio, match="Anexo"):
+        servico.enviar(id_, real=True, candidato=candidato)
+
+
+def test_vaga_com_erro_nao_e_reenviada_sem_refazer(banco, candidato):
+    id_ = _vaga_pronta(banco)
+    repositorio.atualizar(id_, status="erro")
+    with pytest.raises(ErroEnvio, match="status"):
+        servico.enviar(id_, real=False, candidato=candidato)
+
+
+def test_preparar_recusa_vaga_ja_enviada(banco, candidato):
+    id_ = _vaga_pronta(banco)
+    repositorio.atualizar(id_, status="enviada")
+    with pytest.raises(ValueError):
+        servico.preparar(id_, candidato, usar_ia=False)
+    assert repositorio.obter(id_)["status"] == "enviada"
+
+
+def test_desfazer_durante_preparo_nao_coloca_na_fila(banco, candidato, monkeypatch):
+    class FakePDF:
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def gerar(self, html, destino):
+            repositorio.atualizar("d1", status="nova")  # usuário clicou em desfazer no meio
+            Path(destino).write_bytes(b"%PDF")
+
+    monkeypatch.setattr(servico, "GeradorPDF", FakePDF)
+    repositorio.inserir({"id": "d1", "titulo": "Dev", "empresa": "E", "status": "curtida",
+                         "descricao": "Envie currículo para rh@e.com " + "x " * 200})
+    servico.preparar("d1", candidato, usar_ia=False)
+    assert repositorio.obter("d1")["status"] == "nova"
+
+
+def test_empresa_confidencial_nao_bloqueia_outras(banco, candidato, monkeypatch):
+    monkeypatch.setattr(servico, "enviar_smtp", lambda msg: None)
+    servico.enviar(_vaga_pronta(banco, "a", "a@x.com", "Confidencial"), real=True, candidato=candidato)
+    servico.enviar(_vaga_pronta(banco, "b", "b@y.com", "Confidencial"), real=True, candidato=candidato)
+
+
+def test_limite_do_gmail_interrompe_lote(banco, candidato, monkeypatch):
+    import smtplib
+
+    from candidatura import envio
+
+    class FakeSMTP:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def starttls(self, **k): pass
+        def login(self, *a): pass
+        def send_message(self, *a, **k):
+            raise smtplib.SMTPDataError(550, b"5.4.5 Daily user sending quota exceeded.")
+
+    monkeypatch.setattr(envio.smtplib, "SMTP", FakeSMTP)
+    monkeypatch.setattr(config, "SMTP_USUARIO", "eu@gmail.com")
+    monkeypatch.setattr(config, "SMTP_SENHA", "x")
+    monkeypatch.setattr(config, "INTERVALO_MIN_SEG", 0)
+    monkeypatch.setattr(config, "INTERVALO_MAX_SEG", 0)
+    monkeypatch.setattr(servico, "carregar_candidato", lambda: candidato)
+    for i in range(3):
+        _vaga_pronta(banco, f"q{i}", f"rh{i}@x{i}.com", f"E{i}")
+    r = servico.enviar_lote(limite=3, real=True)
+    assert r["enviadas"] == 0 and len(r["erros"]) == 1
+
+
+def test_web_bloqueia_post_de_outro_site(banco, monkeypatch, tmp_path):
+    import yaml
+
+    perfil = tmp_path / "c.yaml"
+    perfil.write_text(yaml.safe_dump(PERFIL, allow_unicode=True), encoding="utf-8")
+    monkeypatch.setattr(config, "PERFIL_PATH", perfil)
+    from web.app import criar_app, link_seguro
+
+    c = criar_app().test_client()
+    assert c.post("/api/enviar-lote", json={}, headers={"Origin": "https://malicioso.com"}).status_code == 403
+    assert c.post("/api/enviar-lote", json={}).status_code == 403  # sem Origin/Referer
+    assert c.post("/vaga/x", data={"email_destino": "hacker@mal.com"},
+                  headers={"Origin": "https://malicioso.com"}).status_code == 403
+    ok = c.post("/api/decidir/inexistente", json={"acao": "descartar"}, headers={"Origin": "http://localhost"})
+    assert ok.status_code == 200
+    assert link_seguro("javascript:alert(1)") == "" and link_seguro("https://x.com") == "https://x.com"

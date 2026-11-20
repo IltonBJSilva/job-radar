@@ -25,12 +25,17 @@ class ErroFatalSMTP(ErroEnvio):
     """Credencial inválida ou conta bloqueada: parar o lote inteiro."""
 
 
+class ErroConexao(ErroEnvio):
+    """Rede/servidor fora. Pode ter caído DEPOIS de o e-mail sair, então a
+    vaga não volta para a fila automaticamente (evita envio duplicado)."""
+
+
 def montar_mensagem(remetente_nome: str, remetente_email: str, destino: str, assunto: str,
                     corpo: str, anexos: list[Path], responder_para: str = "") -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = formataddr((remetente_nome, remetente_email))
     msg["To"] = destino
-    msg["Subject"] = assunto
+    msg["Subject"] = " ".join((assunto or "").split())
     msg["Message-ID"] = make_msgid(domain=remetente_email.split("@")[-1] or "localhost")
     if responder_para and responder_para != remetente_email:
         msg["Reply-To"] = responder_para
@@ -38,7 +43,7 @@ def montar_mensagem(remetente_nome: str, remetente_email: str, destino: str, ass
     for caminho in anexos:
         caminho = Path(caminho)
         if not caminho.exists():
-            continue
+            raise ErroEnvio(f"Anexo não encontrado: {caminho} — refaça o preparo da vaga.")
         tipo, _ = mimetypes.guess_type(caminho.name)
         principal, sub = (tipo or "application/octet-stream").split("/", 1)
         msg.add_attachment(caminho.read_bytes(), maintype=principal, subtype=sub, filename=caminho.name)
@@ -75,8 +80,9 @@ def enviar_smtp(msg: EmailMessage):
     except smtplib.SMTPRecipientsRefused as e:
         raise ErroEnvio(f"Destinatário recusado: {e.recipients}") from e
     except smtplib.SMTPResponseException as e:
-        if e.smtp_code in (421, 450, 451, 452, 454, 550, 554) and b"limit" in (e.smtp_error or b"").lower():
-            raise ErroFatalSMTP(f"Limite do provedor atingido ({e.smtp_code}). Pare por hoje.") from e
-        raise ErroEnvio(f"SMTP {e.smtp_code}: {e.smtp_error!r}") from e
+        texto = (e.smtp_error or b"").decode("utf-8", "ignore").lower()
+        if e.smtp_code == 421 or any(t in texto for t in ("5.4.5", "4.7.", "quota", "limit", "rate", "try again later")):
+            raise ErroFatalSMTP(f"Provedor recusou por limite/bloqueio ({e.smtp_code}): {texto[:120]}. Pare por hoje.") from e
+        raise ErroEnvio(f"SMTP {e.smtp_code}: {texto[:200]}") from e
     except (smtplib.SMTPException, OSError) as e:
-        raise ErroEnvio(f"Falha de conexão SMTP: {e}") from e
+        raise ErroConexao(f"Falha de conexão SMTP: {e}") from e

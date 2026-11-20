@@ -35,12 +35,21 @@ def _empresa_do_titulo(titulo: str) -> str:
     """'[Remoto] Dev Backend Pleno na Empresa X' -> 'Empresa X'.
     '[Remoto] Dev Backend - Empresa X' -> 'Empresa X'."""
     sem_tags = re.sub(r"\[[^\]]*\]", "", titulo).strip()
+    empresa = ""
     for sep in (" na ", " no ", " @ ", " at "):
         if sep in sem_tags:
-            return sem_tags.rsplit(sep, 1)[1].strip(" -|")
-    if " - " in sem_tags:
-        return sem_tags.rsplit(" - ", 1)[1].strip()
-    return ""
+            empresa = sem_tags.rsplit(sep, 1)[1].strip(" -|")
+            break
+    else:
+        if " - " in sem_tags:
+            empresa = sem_tags.rsplit(" - ", 1)[1].strip()
+    if empresa.lower() in _NAO_EMPRESA or len(empresa) < 2:
+        return ""
+    return empresa
+
+
+_NAO_EMPRESA = {"remoto", "remote", "híbrido", "hibrido", "presencial", "pj", "clt", "júnior", "junior",
+                "pleno", "sênior", "senior", "brasil", "home office", "temporário", "freelancer"}
 
 
 def _modalidade_das_tags(textos: list[str]) -> str:

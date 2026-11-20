@@ -49,7 +49,7 @@
       {% if v.cv_path %}<a class="btn" href="/arquivo/{{ v.id }}/cv" target="_blank">CV</a> <a class="btn" href="/arquivo/{{ v.id }}/carta" target="_blank">Carta</a>{% endif %}
       {% if v.status == 'pronta' %}<button class="btn ok" onclick="enviar('{{ v.id }}', this)">Enviar</button>{% endif %}
       {% if v.status in ('erro', 'curtida') %}<button class="btn" onclick="preparar('{{ v.id }}', this)">Refazer</button>{% endif %}
-      {% if v.link %}<a class="btn" href="{{ v.link }}" target="_blank" rel="noopener">↗</a>{% endif %}
+      {% if v.link | link_seguro %}<a class="btn" href="{{ v.link | link_seguro }}" target="_blank" rel="noopener">↗</a>{% endif %}
     </td>
   </tr>
   {% else %}

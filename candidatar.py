@@ -37,7 +37,7 @@ def _termos_remotar() -> list[str]:
 
 def _confirmar_real(args) -> bool:
     real = config.ENVIO_REAL or getattr(args, "real", False)
-    if real and getattr(args, "real", False) and not getattr(args, "sim", False):
+    if real and getattr(args, "real", False) and not getattr(args, "sem_confirmar", False):
         resp = input(f"ENVIO REAL de até {args.limite} e-mail(s) a partir de {config.SMTP_USUARIO}. Confirmar? [s/N] ")
         if resp.strip().lower() not in {"s", "sim", "y", "yes"}:
             print("Cancelado.")
@@ -176,7 +176,7 @@ def main(argv=None):
         a = sub.add_parser(nome)
         a.add_argument("--limite", type=int, default=10)
         a.add_argument("--real", action="store_true", help="envia de verdade (pede confirmação)")
-        a.add_argument("--sim", action="store_true", help="com --real: não perguntar (para agendador)")
+        a.add_argument("--sem-confirmar", action="store_true", help="com --real: não pedir confirmação (para agendador)")
         if nome == "enviar":
             a.add_argument("--id", nargs="*")
         else:

@@ -12,7 +12,7 @@
   {% if v.erro %}<p style="color:var(--no)">{{ v.erro }}</p>{% endif %}
   <p style="margin-top:14px">
     {% if v.cv_path %}<a class="btn" href="/arquivo/{{ v.id }}/cv" target="_blank">📄 Currículo adaptado</a> <a class="btn" href="/arquivo/{{ v.id }}/carta" target="_blank">✉️ Carta</a>{% endif %}
-    {% if v.link %}<a class="btn" href="{{ v.link }}" target="_blank" rel="noopener">Anúncio ↗</a>{% endif %}
+    {% if v.link | link_seguro %}<a class="btn" href="{{ v.link | link_seguro }}" target="_blank" rel="noopener">Anúncio ↗</a>{% endif %}
     {% if not v.cv_path %}<button class="btn primary" onclick="post('/api/preparar/{{ v.id }}').then(()=>{toast('Preparando…');setTimeout(()=>location.reload(),5000)})">Gerar currículo</button>{% endif %}
   </p>
 

@@ -12,6 +12,7 @@ import queue
 import threading
 import traceback
 from pathlib import Path
+from urllib.parse import urlparse
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, url_for
 
@@ -51,9 +52,30 @@ class Trabalhador:
                 self.estado.update(ocupado=not self.fila.empty(), mensagem="")
 
 
+def link_seguro(url: str | None) -> str:
+    """Só http(s): bloqueia `javascript:` vindo de fonte externa."""
+    url = (url or "").strip()
+    return url if urlparse(url).scheme in ("http", "https") else ""
+
+
 def criar_app() -> Flask:
     app = Flask(__name__)
+    app.jinja_env.filters["link_seguro"] = link_seguro
     repositorio.iniciar()
+
+    @app.before_request
+    def bloquear_outros_sites():
+        """Proteção CSRF: qualquer página aberta no navegador poderia mandar
+        POST para 127.0.0.1 (ex.: disparar envio em lote ou trocar o e-mail de
+        destino). Só aceitamos POST cuja origem é este próprio app."""
+        if request.method != "POST":
+            return None
+        origem = request.headers.get("Origin") or request.headers.get("Referer") or ""
+        if not origem or urlparse(origem).netloc != request.host:
+            abort(403)
+        if request.path.startswith("/api/") and not request.is_json:
+            abort(415)
+        return None
     trabalhador = Trabalhador()
 
     # Vagas curtidas que não terminaram de preparar (app fechado no meio).
@@ -73,7 +95,7 @@ def criar_app() -> Flask:
         return {
             "id": v["id"], "titulo": v["titulo"], "empresa": v.get("empresa") or "",
             "local": v.get("local") or "", "modalidade": v.get("modalidade") or "",
-            "site": v.get("site") or "", "link": v.get("link") or "",
+            "site": v.get("site") or "", "link": link_seguro(v.get("link")),
             "publicado_em": v.get("publicado_em") or "", "score": v.get("score") or 0,
             "em_comum": v.get("em_comum") or [], "faltando": v.get("faltando") or [],
             "email": v.get("email_destino") or "",
@@ -187,6 +209,10 @@ def criar_app() -> Flask:
 
     @app.post("/api/preparar/<id_>")
     def api_preparar(id_):
+        v = repositorio.obter(id_) or abort(404)
+        if v["status"] == "enviada":
+            return jsonify({"ok": False, "erro": "Vaga já enviada."}), 400
+        repositorio.atualizar(id_, status="curtida")
         trabalhador.agendar("Preparando currículo", servico.preparar, id_)
         return jsonify({"ok": True})
 

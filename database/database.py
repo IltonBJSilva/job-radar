@@ -266,7 +266,8 @@ def salvar_vaga(job, perfil_chave: str = "", digest_pendente: bool = False, expl
                 job.id, job.titulo, job.empresa, job.local, job.link, job.site,
                 job.chave_secundaria, job.publicado_em, job.modalidade,
                 job.relevancia, perfil_chave, int(digest_pendente), int(exploratoria), "nova",
-                (getattr(job, "texto", "") or "")[:20000],
+                # jobs.db é versionado: limite para o repositório não inchar.
+                (getattr(job, "texto", "") or "")[:4000],
             ),
         )
 

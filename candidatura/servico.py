@@ -10,9 +10,9 @@ from datetime import datetime
 from candidatura import config, repositorio
 from candidatura.adaptador import montar_pacote
 from candidatura.compatibilidade import analisar
-from candidatura.contato import buscar_descricao, email_valido, extrair_emails
+from candidatura.contato import buscar_descricao, email_valido, emails_com_relevancia, extrair_emails
 from candidatura.documentos import GeradorPDF, html_carta, html_curriculo, pasta_da_vaga, slug
-from candidatura.envio import ErroEnvio, ErroFatalSMTP, enviar_smtp, montar_mensagem, salvar_eml
+from candidatura.envio import ErroConexao, ErroEnvio, ErroFatalSMTP, enviar_smtp, montar_mensagem, salvar_eml
 from candidatura.perfil import Candidato, carregar_candidato
 from core.logger import get_logger
 
@@ -56,6 +56,8 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
     vaga = repositorio.obter(id_)
     if not vaga:
         raise KeyError(f"Vaga {id_} não encontrada")
+    if vaga["status"] == "enviada":
+        raise ValueError("Vaga já enviada — não é preparada de novo (protege o histórico de envio).")
 
     try:
         descricao = vaga.get("descricao") or ""
@@ -85,6 +87,11 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
             g.gerar(html_ct, carta_pdf)
 
         status = "pronta" if destino and email_valido(destino) else "manual"
+        # Você pode ter desfeito/descartado enquanto o PDF era gerado: nesse
+        # caso os arquivos ficam salvos, mas a vaga NÃO entra na fila de envio.
+        atual = (repositorio.obter(id_) or {}).get("status")
+        if atual in ("nova", "descartada", "enviada"):
+            status = atual
         repositorio.atualizar(
             id_,
             descricao=descricao,
@@ -103,7 +110,9 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
         )
         logger.info(f"[Candidatura] Preparada ({status}, {analise.score}%): {vaga['titulo']} — {vaga.get('empresa')}")
     except Exception as e:
-        repositorio.atualizar(id_, status="erro", erro=f"preparo: {e}")
+        atual = (repositorio.obter(id_) or {}).get("status")
+        if atual not in ("nova", "descartada", "enviada"):
+            repositorio.atualizar(id_, status="erro", erro=f"preparo: {e}", cv_path=None, carta_path=None)
         logger.error(f"[Candidatura] Erro ao preparar {id_}: {e}")
         raise
     return repositorio.obter(id_)
@@ -125,8 +134,8 @@ def preparar_lote(ids: list[str], usar_ia: bool = True) -> dict:
 # ----------------------------------------------------------------- envio
 
 def motivo_bloqueio(vaga: dict, real: bool) -> str | None:
-    if vaga["status"] not in ("pronta", "erro"):
-        return f"status '{vaga['status']}' (precisa estar 'pronta')"
+    if vaga["status"] != "pronta":
+        return f"status '{vaga['status']}' (precisa estar 'pronta'; após erro, refaça o preparo)"
     destino = vaga.get("email_destino")
     if not destino or not email_valido(destino):
         return "sem e-mail de destino válido"
@@ -152,9 +161,9 @@ def enviar(id_: str, real: bool | None = None, candidato: Candidato | None = Non
     candidato = candidato or carregar_candidato()
     remetente = config.SMTP_USUARIO or candidato.email
     anexos = [p for p in (vaga.get("cv_path"), vaga.get("carta_path")) if p]
-    msg = montar_mensagem(candidato.nome, remetente, vaga["email_destino"], vaga["assunto"],
-                          vaga["corpo"], anexos, responder_para=candidato.email)
     try:
+        msg = montar_mensagem(candidato.nome, remetente, vaga["email_destino"], vaga["assunto"] or "",
+                              vaga["corpo"] or "", anexos, responder_para=candidato.email)
         if real:
             enviar_smtp(msg)
         else:
@@ -162,8 +171,13 @@ def enviar(id_: str, real: bool | None = None, candidato: Candidato | None = Non
 
             salvar_eml(msg, Path(vaga["cv_path"]).parent)
     except ErroEnvio as e:
-        repositorio.atualizar(id_, status="erro", erro=f"envio: {e}")
+        dica = " (pode ter saído antes da queda — confira sua caixa de Enviados antes de reenviar)" \
+            if isinstance(e, ErroConexao) else ""
+        repositorio.atualizar(id_, status="erro", erro=f"envio: {e}{dica}")
         raise
+    except Exception as e:
+        repositorio.atualizar(id_, status="erro", erro=f"envio: {e}")
+        raise ErroEnvio(str(e)) from e
 
     repositorio.atualizar(id_, status="enviada", simulado=0 if real else 1,
                           enviada_em=datetime.now().isoformat(timespec="seconds"), erro=None)
@@ -177,6 +191,7 @@ def enviar_lote(limite: int = 10, real: bool | None = None, ids: list[str] | Non
     candidato = carregar_candidato()
     fila = [repositorio.obter(i) for i in ids] if ids else repositorio.listar("pronta")
     resultado = {"enviadas": 0, "puladas": [], "erros": [], "real": real}
+    falhas_conexao_seguidas = 0
     for i, vaga in enumerate(f for f in fila if f):
         if resultado["enviadas"] >= limite:
             break
@@ -189,11 +204,18 @@ def enviar_lote(limite: int = 10, real: bool | None = None, ids: list[str] | Non
         try:
             enviar(vaga["id"], real=real, candidato=candidato)
             resultado["enviadas"] += 1
+            falhas_conexao_seguidas = 0
             if ao_progredir:
                 ao_progredir(vaga, resultado)
         except ErroFatalSMTP as e:
             resultado["erros"].append((vaga["titulo"], str(e)))
             break
+        except ErroConexao as e:
+            resultado["erros"].append((vaga["titulo"], str(e)))
+            falhas_conexao_seguidas += 1
+            if falhas_conexao_seguidas >= 2:
+                break
+            continue
         except ErroEnvio as e:
             resultado["erros"].append((vaga["titulo"], str(e)))
             continue
@@ -238,9 +260,14 @@ def auto(score_minimo: int | None = None, limite: int = 10, real: bool | None = 
     score_minimo = config.SCORE_MINIMO_AUTO if score_minimo is None else score_minimo
     importacao = importar_tudo(remotar_termos=remotar_termos)
     enriquecer(score_minimo=max(0, score_minimo - 15))
+    def email_de_recrutamento(v: dict) -> bool:
+        # Sem revisão humana, só envia para e-mail que aparece em contexto de
+        # candidatura (currículo/vagas/rh...) — nunca para comercial@, etica@...
+        return emails_com_relevancia(v.get("descricao") or "").get((v.get("email_destino") or "").lower(), 0) > 0
+
     candidatas = [
         v for v in repositorio.listar("nova", limite=5000)
-        if (v.get("score") or 0) >= score_minimo and v.get("email_destino")
+        if (v.get("score") or 0) >= score_minimo and v.get("email_destino") and email_de_recrutamento(v)
     ][: limite * 2]
     for v in candidatas:
         repositorio.atualizar(v["id"], status="curtida")

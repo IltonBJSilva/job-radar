@@ -250,7 +250,7 @@ _REGRAS_INTL = RegrasFiltro(
     qualificadores_cargo=[],
     cidades=CIDADES_INTL,
     mercados_remoto_aceitos=MERCADOS_REMOTO_ACEITOS_INTL,
-    idiomas_exigidos=IDIOMAS_EXIGIDOS_INTL,
+    idiomas_exigidos=None,
 )
 
 # Eixo secundário (Ibéria): vaga presencial/híbrida em Portugal/Espanha,

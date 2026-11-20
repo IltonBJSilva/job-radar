@@ -32,16 +32,6 @@ KEYWORDS_INTL = [
 # "data analyst" sozinho aqui — isso é o mundo inteiro sem filtro nenhum de
 # idioma, a maioria fora do nosso alcance.
 TERMOS_BUSCA_INTL = [
-    "backend developer portuguese",
-    "backend developer spanish",
-    "software engineer portuguese",
-    "software engineer spanish",
-    "python developer portuguese",
-    "python developer spanish",
-    "remote backend developer latam",
-    "remote software engineer latam",
-    "python developer latam",
-    "node developer latam",
     "backend developer",
     "software engineer",
     "python developer",

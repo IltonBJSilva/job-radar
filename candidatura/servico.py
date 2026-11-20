@@ -74,13 +74,17 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
     try:
         candidato = candidato or carregar_candidato()
         descricao = vaga.get("descricao") or ""
-        if len(descricao) < DESCRICAO_MINIMA and vaga.get("link"):
+        espontanea = vaga.get("origem") == "espontanea"
+        # Espontânea: o link é o site/portal da empresa, não um anúncio de vaga.
+        if len(descricao) < DESCRICAO_MINIMA and vaga.get("link") and not espontanea:
             baixada = buscar_descricao(vaga["link"])
             if len(baixada) > len(descricao):
                 descricao = baixada
 
         emails = list(dict.fromkeys((vaga.get("emails_encontrados") or []) + extrair_emails(descricao)))
-        destino = vaga.get("email_destino") or (emails[0] if emails else None)
+        # Espontânea: só o e-mail de recrutamento escolhido na descoberta
+        # (contato@/comercial@ do site não viram destino sozinhos).
+        destino = vaga.get("email_destino") or (emails[0] if emails and not espontanea else None)
 
         analise = analisar(candidato, vaga["titulo"], descricao)
         pacote = montar_pacote(candidato, {**vaga, "descricao": descricao}, analise, usar_ia=usar_ia)
@@ -90,7 +94,7 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
         nome_arquivo = " ".join([partes_nome[0], partes_nome[-1]]) if len(partes_nome) > 2 else candidato.nome
         nome = slug(nome_arquivo, 40).replace("-", "_").title() or "Candidato"
         html_cv = html_curriculo(pacote.curriculo)
-        html_ct = html_carta(candidato, pacote.carta, vaga["titulo"], vaga.get("empresa") or "")
+        html_ct = html_carta(candidato, pacote.carta, vaga["titulo"], vaga.get("empresa") or "", espontanea=espontanea)
         (pasta / "curriculo.html").write_text(html_cv, encoding="utf-8")
         (pasta / "carta.html").write_text(html_ct, encoding="utf-8")
         (pasta / "email.txt").write_text(f"Assunto: {pacote.assunto}\n\n{pacote.corpo_email}", encoding="utf-8")
@@ -103,7 +107,7 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
 
         status = "pronta" if destino and email_valido(destino) else "manual"
         aviso = None
-        if idioma_da_vaga(descricao) == "en":
+        if not espontanea and idioma_da_vaga(descricao) == "en":
             # CV/carta saem em português: enviar sem revisão eliminaria a candidatura.
             status, aviso = "manual", "Vaga em inglês: revise e traduza CV/carta antes de enviar."
         # Você pode ter desfeito/descartado enquanto o PDF era gerado: nesse
@@ -122,7 +126,7 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
             descricao=descricao,
             emails_encontrados=emails,
             email_destino=destino,
-            score=analise.score,
+            score=None if espontanea else analise.score,
             em_comum=analise.em_comum,
             faltando=analise.faltando,
             assunto=pacote.assunto,

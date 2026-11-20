@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, url_for
 
-from candidatura import config, repositorio, servico
+from candidatura import config, empresas, importar_perfil, repositorio, servico
 from candidatura.contato import email_valido, extrair_emails
 from candidatura.compatibilidade import analisar
 from candidatura.perfil import PerfilInvalido, PerfilNaoEncontrado, carregar_candidato
@@ -55,6 +55,12 @@ class Trabalhador:
 HOSTS_LOCAIS = {"127.0.0.1", "localhost"}
 
 
+def config_github_token() -> str:
+    import os
+
+    return os.getenv("GITHUB_TOKEN", "")
+
+
 def link_seguro(url: str | None) -> str:
     """Só http(s): bloqueia `javascript:` vindo de fonte externa."""
     url = (url or "").strip()
@@ -63,6 +69,7 @@ def link_seguro(url: str | None) -> str:
 
 def criar_app() -> Flask:
     app = Flask(__name__)
+    app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # upload do currículo
     app.jinja_env.filters["link_seguro"] = link_seguro
     repositorio.iniciar()
     repositorio.liberar_envios_interrompidos()
@@ -151,10 +158,110 @@ def criar_app() -> Flask:
 
     @app.get("/")
     def swipe():
-        if not candidato_ou_none():
+        c = candidato_ou_none()
+        if not c and erro_perfil["msg"]:
             return render_template("configurar.html", exemplo=config.PERFIL_EXEMPLO_PATH, destino=config.PERFIL_PATH,
                                    erro=erro_perfil["msg"])
+        if not c or c.email == importar_perfil.EXEMPLO_EMAIL:
+            return redirect(url_for("perfil"))  # cadastro único antes de tudo
         return render_template("swipe.html")
+
+    # ------------------------------------------------ cadastro único
+
+    def _yaml_atual() -> str:
+        try:
+            return config.PERFIL_PATH.read_text(encoding="utf-8")
+        except OSError:
+            return ""
+
+    @app.route("/perfil", methods=["GET", "POST"])
+    def perfil():
+        import yaml
+
+        aviso, avisos, texto_yaml = "", [], _yaml_atual()
+        if request.method == "POST" and request.form.get("acao") == "salvar":
+            texto_yaml = request.form.get("yaml", "")
+            try:
+                dados = yaml.safe_load(texto_yaml) or {}
+                if not isinstance(dados, dict):
+                    raise ValueError("o perfil precisa ser um mapa (pessoal:, habilidades:, ...)")
+                from candidatura.perfil import candidato_de_dict
+
+                c = candidato_de_dict(dados)
+                if not c.nome or not c.email or not email_valido(c.email) or c.email == importar_perfil.EXEMPLO_EMAIL:
+                    raise ValueError("preencha seu nome e seu e-mail real em pessoal:")
+            except (yaml.YAMLError, ValueError) as e:
+                return render_template("perfil.html", yaml=texto_yaml, aviso=f"Não salvei: {e}", avisos=[], gerado=True)
+            config.PERFIL_PATH.parent.mkdir(parents=True, exist_ok=True)
+            if config.PERFIL_PATH.exists():
+                config.PERFIL_PATH.with_suffix(".yaml.bak").write_text(_yaml_atual(), encoding="utf-8")
+            config.PERFIL_PATH.write_text(texto_yaml, encoding="utf-8")
+            termos = (c.preferencias or {}).get("termos_remotar") or ["python", "backend", "node"]
+            trabalhador.agendar("Buscando vagas para o seu perfil", servico.importar_tudo, remotar_termos=termos)
+            trabalhador.agendar("Recalculando compatibilidade", servico.pontuar_novas)
+            return redirect(url_for("swipe"))
+
+        if request.method == "POST":  # acao == gerar
+            arquivos = [f for f in (request.files.get("cv"), request.files.get("linkedin_pdf")) if f and f.filename]
+            textos = [request.form.get("texto", "")]
+            try:
+                for f in arquivos:
+                    textos.append(importar_perfil.texto_de_arquivo(f.filename, f.read()))
+                base = yaml.safe_load(_yaml_atual()) if _yaml_atual() else {}
+                gerado = importar_perfil.montar_perfil(
+                    texto_cv="\n\n".join(t for t in textos if t.strip()),
+                    github=request.form.get("github", ""), linkedin_url=request.form.get("linkedin", ""),
+                    portfolio_url=request.form.get("portfolio", ""),
+                    base=base if isinstance(base, dict) else {}, token_github=config_github_token(),
+                )
+            except (importar_perfil.ErroImportacao, yaml.YAMLError) as e:
+                return render_template("perfil.html", yaml=texto_yaml, aviso=str(e), avisos=[], gerado=False)
+            avisos = importar_perfil.faltando_no_perfil(gerado)
+            return render_template("perfil.html", yaml=importar_perfil.perfil_para_yaml(gerado), gerado=True,
+                                   aviso="Confira e corrija abaixo antes de salvar.", avisos=avisos)
+        exemplo = (c := candidato_ou_none()) is None or c.email == importar_perfil.EXEMPLO_EMAIL
+        return render_template("perfil.html", yaml=texto_yaml, aviso=aviso, avisos=avisos, gerado=False,
+                               primeira_vez=exemplo)
+
+    # ------------------------------------------- candidatura espontânea
+
+    @app.get("/empresas")
+    def pagina_empresas():
+        empresas.sincronizar_lista()
+        linhas = empresas.listar()
+        return render_template("empresas.html", empresas=linhas, aviso=request.args.get("aviso", ""),
+                               com_email=sum(1 for e in linhas if e.get("email")),
+                               limite=config.LIMITE_DIARIO)
+
+    @app.post("/empresas")
+    def adicionar_empresa():
+        try:
+            empresas.adicionar(request.form.get("nome", ""), request.form.get("site", ""),
+                               request.form.get("email", ""), request.form.get("tipo", ""))
+        except ValueError as e:
+            return redirect(url_for("pagina_empresas", aviso=str(e)))
+        return redirect(url_for("pagina_empresas", aviso="Empresa adicionada."))
+
+    @app.post("/api/empresas/descobrir")
+    def api_descobrir():
+        todas = bool((request.get_json(silent=True) or {}).get("todas"))
+        trabalhador.agendar("Procurando e-mails de RH nos sites das empresas", empresas.descobrir_todas,
+                            apenas_pendentes=not todas)
+        return jsonify({"ok": True})
+
+    @app.post("/api/empresas/preparar")
+    def api_preparar_empresas():
+        dominios = (request.get_json(silent=True) or {}).get("dominios")
+        if dominios is not None and not isinstance(dominios, list):
+            abort(400)
+
+        def tarefa():
+            ids = empresas.criar_candidaturas(dominios)
+            if ids:
+                servico.preparar_lote(ids)
+
+        trabalhador.agendar("Preparando candidaturas espontâneas", tarefa)
+        return jsonify({"ok": True})
 
     @app.get("/fila")
     def fila():

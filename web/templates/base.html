@@ -64,7 +64,9 @@
   <a class="tab {% if request.args.get('aba') == 'enviada' %}on{% endif %}" href="/fila?aba=enviada">Enviadas<span class="badge" data-conta="enviada">{{ contagem.enviada }}</span></a>
   {% if contagem.respondida %}<a class="tab {% if request.args.get('aba') == 'respondida' %}on{% endif %}" href="/fila?aba=respondida">Respostas<span class="badge">{{ contagem.respondida }}</span></a>{% endif %}
   {% if contagem.erro %}<a class="tab {% if request.args.get('aba') == 'erro' %}on{% endif %}" href="/fila?aba=erro">Erros<span class="badge">{{ contagem.erro }}</span></a>{% endif %}
+  <a class="tab {% if request.path == '/empresas' %}on{% endif %}" href="/empresas">Empresas</a>
   <a class="tab {% if request.path == '/nova' %}on{% endif %}" href="/nova">+ Vaga manual</a>
+  <a class="tab {% if request.path == '/perfil' %}on{% endif %}" href="/perfil">Meu perfil</a>
   <span id="status"></span>
   <span class="modo {{ 'real' if envio_real else 'sim' }}" title="Altere ENVIO_REAL no .env">{{ 'ENVIO REAL' if envio_real else 'MODO SIMULAÇÃO' }}</span>
 </nav>

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block titulo %}Empresas — Job Radar{% endblock %}
+{% block head %}
+<style>
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .tabela { overflow-x: auto; }
+  .acoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .linha-form { display: grid; grid-template-columns: 1.2fr 1.2fr 1.4fr auto; gap: 8px; align-items: end; }
+  @media (max-width: 700px) { .linha-form { grid-template-columns: 1fr; } td.oc, th.oc { display: none; } }
+  .ok { color: var(--ok); font-weight: 700; } .warn { color: var(--warn); font-weight: 600; }
+</style>
+{% endblock %}
+{% block corpo %}
+<div class="card" style="padding:22px 24px;margin-bottom:18px">
+  <h1 style="margin:0 0 6px;font-size:22px">Candidatura espontânea</h1>
+  <p class="muted" style="margin-top:0">Envie seu currículo para empresas mesmo sem vaga anunciada: <b>1 e-mail separado por empresa</b>,
+    com carta própria. O sistema visita o site oficial de cada uma e usa só e-mails de recrutamento do domínio dela
+    (nunca inventa endereço). Big techs só aceitam pelo portal: ficam em “Sem e-mail” com o PDF pronto.</p>
+  {% if aviso %}<p style="font-weight:600">{{ aviso }}</p>{% endif %}
+  <div class="acoes">
+    <button class="btn primary" data-trava onclick="descobrir(false)">1. Procurar e-mails de RH</button>
+    <button class="btn ok" data-trava onclick="preparar()">2. Preparar CV + carta ({{ com_email }} com e-mail)</button>
+    <a class="btn" href="/fila?aba=pronta">3. Revisar e enviar →</a>
+    <button class="btn" data-trava onclick="descobrir(true)" title="Visita de novo também as já verificadas">Verificar todas de novo</button>
+  </div>
+  <p class="muted" style="font-size:13px;margin-bottom:0">Envio: até {{ limite }} por dia, com 1–3 min entre um e outro (rajada de e-mails
+    derruba sua conta no Gmail). Empresa já contatada nos últimos 30 dias é pulada.</p>
+</div>
+
+<div class="card" style="padding:18px 20px;margin-bottom:18px">
+  <form method="post" class="linha-form">
+    <div><label for="e-nome">Empresa</label><input id="e-nome" name="nome" required></div>
+    <div><label for="e-site">Site</label><input id="e-site" name="site" required placeholder="empresa.com.br"></div>
+    <div><label for="e-email">E-mail de RH (se souber)</label><input id="e-email" name="email" placeholder="opcional"></div>
+    <div><button class="btn">Adicionar</button></div>
+  </form>
+</div>
+
+<div class="card tabela" style="padding:6px 10px">
+  <table>
+    <thead><tr><th>Empresa</th><th class="oc">Tipo</th><th>E-mail de recrutamento</th><th>Situação</th></tr></thead>
+    <tbody>
+    {% for e in empresas %}
+      <tr>
+        <td><b>{{ e.nome }}</b><br><a class="muted" href="{{ e.site|link_seguro }}" target="_blank" rel="noopener">{{ e.dominio }}</a></td>
+        <td class="oc muted">{{ e.tipo }}{% if e.cidade %} · {{ e.cidade }}{% endif %}</td>
+        <td>
+          {% if e.email %}<span class="ok">{{ e.email }}</span>
+          {% elif e.portal %}<a href="{{ e.portal|link_seguro }}" target="_blank" rel="noopener">só pelo portal ↗</a>
+          {% elif e.verificada_em %}<span class="warn">não publicado{% if e.erro %} ({{ e.erro[:50] }}){% endif %}</span>
+          {% else %}<span class="muted">ainda não procurado</span>{% endif %}
+          {% if e.emails and not e.email %}<div class="muted" style="font-size:12px">outros: {{ e.emails[:2]|join(', ') }}</div>{% endif %}
+        </td>
+        <td>{% if e.status %}<a href="/vaga/{{ e.candidatura_id }}">{{ rotulo_status(e.status, e.simulado) }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  async function descobrir(todas) {
+    try { await post('/api/empresas/descobrir', { todas }); toast('Procurando… (leva alguns minutos; pode navegar)'); }
+    catch (e) { toast(e.message); }
+  }
+  async function preparar() {
+    if (!confirm('Gerar currículo + carta para todas as empresas com e-mail ou portal? Nada é enviado ainda.')) return;
+    try { await post('/api/empresas/preparar', {}); toast('Preparando… depois revise em "Prontas".'); }
+    catch (e) { toast(e.message); }
+  }
+  // Recarrega quando o trabalho em segundo plano termina.
+  let estavaOcupado = false;
+  setInterval(() => {
+    const o = !!(window.estadoAtual && window.estadoAtual.ocupado);
+    if (estavaOcupado && !o) location.reload();
+    estavaOcupado = o;
+  }, 1500);
+</script>
+{% endblock %}

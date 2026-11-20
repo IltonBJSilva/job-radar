@@ -1,0 +1,87 @@
+# Empresas para candidatura espontânea (1 e-mail por empresa).
+#
+# O sistema visita o site OFICIAL de cada uma e procura o e-mail de
+# recrutamento ("Trabalhe conosco", "Carreiras", rodapé). Nenhum e-mail aqui é
+# inventado: se o site não publicar, a empresa fica em "Sem e-mail" com o link
+# do portal de carreiras e o seu PDF pronto para anexar lá.
+#
+# Big techs (Google, Microsoft, Amazon...) NÃO recebem currículo por e-mail —
+# só pelo portal. Elas estão aqui para você não esquecer delas.
+#
+# Para adicionar as suas, crie config/empresas.yaml no mesmo formato (ou use a
+# tela "Empresas"). Se souber o e-mail de RH, informe em `email:`.
+
+empresas:
+  # ----------------------------------------------- fábricas de software / consultorias
+  - {nome: CI&T, site: ciandt.com, tipo: Consultoria, cidade: Campinas}
+  - {nome: Stefanini, site: stefanini.com, tipo: Consultoria}
+  - {nome: Zup Innovation, site: zup.com.br, tipo: Consultoria, cidade: Uberlândia}
+  - {nome: Sankhya, site: sankhya.com.br, tipo: Produto, cidade: Uberlândia}
+  - {nome: Algar Tech, site: algartech.com, tipo: Consultoria, cidade: Uberlândia}
+  - {nome: DB1 Group, site: db1.com.br, tipo: Fábrica de software, cidade: Maringá}
+  - {nome: Softplan, site: softplan.com.br, tipo: Produto, cidade: Florianópolis}
+  - {nome: CWI Software, site: cwi.com.br, tipo: Fábrica de software, cidade: Porto Alegre}
+  - {nome: ilegra, site: ilegra.com, tipo: Fábrica de software, cidade: Porto Alegre}
+  - {nome: BRQ Digital Solutions, site: brq.com, tipo: Consultoria}
+  - {nome: Objective, site: objective.com.br, tipo: Fábrica de software, cidade: Maringá}
+  - {nome: Sensedia, site: sensedia.com.br, tipo: Produto, cidade: Campinas}
+  - {nome: Compass UOL, site: compass.uol, tipo: Consultoria}
+  - {nome: Venturus, site: venturus.org.br, tipo: Instituto de tecnologia, cidade: Campinas}
+  - {nome: Senior Sistemas, site: senior.com.br, tipo: Produto, cidade: Blumenau}
+  - {nome: dti digital, site: dtidigital.com.br, tipo: Fábrica de software, cidade: Belo Horizonte}
+  - {nome: Raro Labs, site: rarolabs.com.br, tipo: Fábrica de software, cidade: Belo Horizonte}
+  - {nome: Avenue Code, site: avenuecode.com, tipo: Consultoria}
+  - {nome: Codeminer42, site: codeminer42.com, tipo: Fábrica de software}
+  - {nome: Lambda3, site: lambda3.com.br, tipo: Consultoria, cidade: São Paulo}
+  - {nome: Cheesecake Labs, site: cheesecakelabs.com, tipo: Fábrica de software, cidade: Florianópolis}
+  - {nome: Jera, site: jera.com.br, tipo: Fábrica de software, cidade: Campo Mourão}
+  - {nome: Matera, site: matera.com, tipo: Produto, cidade: Campinas}
+  - {nome: Ateliware, site: ateliware.com, tipo: Fábrica de software, cidade: Curitiba}
+  - {nome: Vinta Software, site: vintasoftware.com, tipo: Fábrica de software, cidade: Recife}
+  - {nome: Tecnospeed, site: tecnospeed.com.br, tipo: Produto, cidade: Maringá}
+  - {nome: Softdesign, site: softdesign.com.br, tipo: Fábrica de software, cidade: Porto Alegre}
+  - {nome: Mutant, site: mutant.com.br, tipo: Consultoria}
+  - {nome: Programmers, site: programmers.com.br, tipo: Consultoria}
+  - {nome: Act Digital, site: actdigital.com, tipo: Consultoria}
+  - {nome: Foursys, site: foursys.com.br, tipo: Consultoria, cidade: São Paulo}
+  - {nome: Sysmap, site: sysmap.com.br, tipo: Consultoria}
+  - {nome: Bluesoft, site: bluesoft.com.br, tipo: Produto, cidade: São Paulo}
+  - {nome: Neoway, site: neoway.com.br, tipo: Produto, cidade: Florianópolis}
+  - {nome: Involves, site: involves.com, tipo: Produto, cidade: Florianópolis}
+  - {nome: Locaweb, site: locaweb.com.br, tipo: Produto, cidade: São Paulo}
+  - {nome: Smarttbot, site: smarttbot.com, tipo: Produto, cidade: Uberlândia}
+  - {nome: Tivit, site: tivit.com, tipo: Consultoria}
+  - {nome: Thoughtworks, site: thoughtworks.com, tipo: Consultoria}
+  - {nome: GFT, site: gft.com, tipo: Consultoria}
+  - {nome: Globant, site: globant.com, tipo: Consultoria}
+  - {nome: Accenture, site: accenture.com, tipo: Consultoria}
+  - {nome: Capgemini, site: capgemini.com, tipo: Consultoria}
+  - {nome: NTT DATA, site: nttdata.com, tipo: Consultoria}
+  - {nome: Minsait, site: minsait.com, tipo: Consultoria}
+  - {nome: Keyrus, site: keyrus.com, tipo: Consultoria}
+
+  # ----------------------------------------------- produto / scale-ups brasileiras
+  - {nome: TOTVS, site: totvs.com, tipo: Produto}
+  - {nome: Hotmart, site: hotmart.com, tipo: Produto, cidade: Belo Horizonte}
+  - {nome: Blip, site: blip.ai, tipo: Produto, cidade: Belo Horizonte}
+  - {nome: Méliuz, site: meliuz.com.br, tipo: Produto, cidade: Belo Horizonte}
+  - {nome: Sympla, site: sympla.com.br, tipo: Produto, cidade: Belo Horizonte}
+  - {nome: RD Station, site: rdstation.com, tipo: Produto, cidade: Florianópolis}
+  - {nome: Conta Azul, site: contaazul.com, tipo: Produto, cidade: Joinville}
+  - {nome: Pipefy, site: pipefy.com, tipo: Produto, cidade: Curitiba}
+  - {nome: VTEX, site: vtex.com, tipo: Produto}
+  - {nome: QuintoAndar, site: quintoandar.com.br, tipo: Produto}
+  - {nome: Stone, site: stone.com.br, tipo: Produto}
+  - {nome: PicPay, site: picpay.com, tipo: Produto}
+  - {nome: iFood, site: ifood.com.br, tipo: Produto}
+  - {nome: Nubank, site: nubank.com.br, tipo: Produto}
+  - {nome: Mercado Livre, site: mercadolivre.com.br, tipo: Produto}
+
+  # ----------------------------------------------- big techs (só portal)
+  - {nome: Google, site: google.com, tipo: Big tech, portal: "https://www.google.com/about/careers/applications/"}
+  - {nome: Microsoft, site: microsoft.com, tipo: Big tech, portal: "https://careers.microsoft.com"}
+  - {nome: Amazon, site: amazon.com.br, tipo: Big tech, portal: "https://www.amazon.jobs"}
+  - {nome: Meta, site: meta.com, tipo: Big tech, portal: "https://www.metacareers.com"}
+  - {nome: IBM, site: ibm.com, tipo: Big tech, portal: "https://www.ibm.com/careers"}
+  - {nome: Oracle, site: oracle.com, tipo: Big tech, portal: "https://www.oracle.com/careers/"}
+  - {nome: SAP, site: sap.com, tipo: Big tech, portal: "https://jobs.sap.com"}

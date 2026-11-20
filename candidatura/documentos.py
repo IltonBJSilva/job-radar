@@ -34,9 +34,10 @@ def html_curriculo(curriculo) -> str:
     return _env.get_template("curriculo.html").render(c=curriculo)
 
 
-def html_carta(candidato, carta: str, titulo: str, empresa: str) -> str:
+def html_carta(candidato, carta: str, titulo: str, empresa: str, espontanea: bool = False) -> str:
+    referencia = f"candidatura espontânea ({titulo})" if espontanea else f"vaga {titulo}"
     return _env.get_template("carta.html").render(
-        candidato=candidato, carta=carta, titulo=titulo, empresa=empresa, data=data_extenso()
+        candidato=candidato, carta=carta, titulo=titulo, referencia=referencia, empresa=empresa, data=data_extenso()
     )
 
 

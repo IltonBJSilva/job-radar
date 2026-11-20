@@ -14,6 +14,7 @@ curriculos_certificados/*
 
 # Dados pessoais do módulo de candidatura (nunca vão para o GitHub)
 config/candidato.yaml
+config/candidato.yaml.bak
 data/candidaturas.db*
 saida/
 .pytest_cache/

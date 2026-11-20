@@ -238,7 +238,60 @@ def _corpo_email(candidato: Candidato, titulo: str, empresa: str, declaradas: li
     return "\n".join(linhas) + "\n" + assinatura.strip() + "\n"
 
 
+def _abertura_espontanea(candidato: Candidato, cargo: str, empresa: str) -> str:
+    # "na empresa X" é sempre correto (evita "na Google"/"no Stefanini").
+    empresa_txt = nome_empresa(empresa)
+    atuais = [h for h in candidato.todas_habilidades if h.lower() in _recentes(candidato)][:4]
+    texto = (f"Gostaria de me colocar à disposição para oportunidades de {titulo_curto(cargo)}"
+             + (f" na empresa {empresa_txt}" if empresa_txt else "") + ", mesmo que não haja uma vaga aberta agora.")
+    papel = candidato.titulo.split("|")[0].strip()
+    if papel:
+        texto += f" Sou {papel[0].lower() + papel[1:]}" + (
+            f" e {_verbo_tecnologias(candidato)} {_lista_humana(atuais)}." if atuais else ".")
+    return texto
+
+
+def _pacote_espontaneo(candidato: Candidato, vaga: dict, analise: Analise) -> Pacote:
+    """Sem vaga anunciada: nada de "gostaria de me candidatar à vaga de..."."""
+    cargo = vaga.get("titulo", "").strip() or candidato.titulo
+    empresa = (vaga.get("empresa") or "").strip()
+    abertura = _abertura_espontanea(candidato, cargo, empresa)
+
+    evidencias = []
+    for e in candidato.experiencias[:2]:
+        conquista = next((c for c in e.conquistas if c and c.strip()), "")
+        if conquista and e.empresa:
+            evidencias.append(f"{e.empresa}: {_minuscula_inicial(conquista)}")
+    if not evidencias:
+        for p in candidato.projetos[:2]:
+            if p.descricao and p.descricao.strip():
+                evidencias.append(f"projeto {p.nome}: {_minuscula_inicial(p.descricao)}")
+    p2 = ("Alguns resultados recentes — " + "; ".join(evidencias) + ".") if evidencias else ""
+    disp = (candidato.preferencias or {}).get("disponibilidade")
+    p3 = ("Seguem em anexo meu currículo e esta carta. Caso surja uma posição compatível, terei prazer em conversar"
+          + (f"; minha disponibilidade para início é {disp}" if disp else "") + ".")
+    carta = "\n\n".join(p for p in (abertura, p2, p3) if p)
+
+    linhas = ["Olá,", "", abertura, "",
+              "Envio em anexo meu currículo e uma carta de apresentação. Se fizer sentido, peço que considerem "
+              "meu perfil para processos atuais ou futuros.", "", "Atenciosamente,"]
+    assinatura = candidato.assinatura_email or "\n".join(
+        x for x in [candidato.nome, candidato.telefone,
+                    *[f"{_ROTULOS_LINKS.get(k.lower(), k.capitalize())}: {v}" for k, v in candidato.links.items()]] if x
+    )
+    curriculo = CurriculoAdaptado(
+        candidato=candidato, titulo=candidato.titulo, resumo=candidato.resumo,
+        grupos=_ordenar_habilidades(candidato, analise), experiencias=_ordenar_experiencias(candidato, analise),
+        projetos=_ordenar_projetos(candidato, analise), destaques=[],
+    )
+    assunto = f"Candidatura espontânea: {titulo_curto(cargo)} — {_primeiro_ultimo(candidato.nome)}"
+    return Pacote(curriculo=curriculo, carta=carta, assunto=assunto,
+                  corpo_email="\n".join(linhas) + "\n" + assinatura.strip() + "\n")
+
+
 def montar_pacote(candidato: Candidato, vaga: dict, analise: Analise, usar_ia: bool = True) -> Pacote:
+    if vaga.get("origem") == "espontanea":
+        return _pacote_espontaneo(candidato, vaga, analise)
     titulo_vaga = vaga.get("titulo", "").strip()
     empresa = (vaga.get("empresa") or "").strip()
     descricao = vaga.get("descricao") or ""

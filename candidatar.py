@@ -10,6 +10,8 @@
     python candidatar.py respostas             lê o Gmail (IMAP) e marca respondidas/bounces
     python candidatar.py followup --limite 10  1 follow-up educado após 7 dias sem resposta
     python candidatar.py agendar --hora 09:00  roda tudo todo dia (Agendador de Tarefas do Windows)
+    python candidatar.py perfil --cv cv.pdf --github usuario   cadastro único (monta o perfil)
+    python candidatar.py empresas --descobrir --preparar      candidatura espontânea para empresas
     python candidatar.py status                resumo da fila
 
 Envio real exige ENVIO_REAL=true no .env OU a flag --real (que pede confirmação).
@@ -199,6 +201,61 @@ def cmd_agendar(args):
     print(f"Pronto: todo dia às {args.hora} o Windows roda {script}. Remover: schtasks /Delete /TN JobRadarCandidaturas /F")
 
 
+def cmd_perfil(args):
+    """Cadastro único: currículo + GitHub (+ LinkedIn) -> config/candidato.yaml."""
+    import os
+    from pathlib import Path
+
+    import yaml
+
+    from candidatura import importar_perfil
+
+    textos = []
+    for caminho in (args.cv, args.linkedin_pdf):
+        if caminho:
+            p = Path(caminho)
+            textos.append(importar_perfil.texto_de_arquivo(p.name, p.read_bytes()))
+    base = {}
+    if config.PERFIL_PATH.exists():
+        base = yaml.safe_load(config.PERFIL_PATH.read_text(encoding="utf-8")) or {}
+    perfil = importar_perfil.montar_perfil("\n\n".join(textos), github=args.github or "", linkedin_url=args.linkedin or "",
+                                           portfolio_url=args.portfolio or "", base=base if isinstance(base, dict) else {},
+                                           usar_ia=not args.sem_ia, token_github=os.getenv("GITHUB_TOKEN", ""))
+    texto = importar_perfil.perfil_para_yaml(perfil)
+    destino = Path(args.saida) if args.saida else config.PERFIL_PATH
+    if destino.exists():
+        destino.with_suffix(".yaml.bak").write_text(destino.read_text(encoding="utf-8"), encoding="utf-8")
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    destino.write_text(texto, encoding="utf-8")
+    print(f"Perfil salvo em {destino} (o anterior ficou em .bak). CONFIRA o arquivo antes de enviar.")
+    faltando = importar_perfil.faltando_no_perfil(perfil)
+    if faltando:
+        print("Falta preencher:", ", ".join(faltando))
+
+
+def cmd_empresas(args):
+    from candidatura import empresas, servico
+
+    novas = empresas.sincronizar_lista()
+    if novas:
+        print(f"{novas} empresa(s) nova(s) na lista.")
+    if args.descobrir:
+        def progresso(i, total, nome):
+            print(f"  [{i}/{total}] {nome}")
+
+        print(empresas.descobrir_todas(apenas_pendentes=not args.todas, ao_progredir=progresso))
+    if args.preparar:
+        ids = empresas.criar_candidaturas()
+        print(f"{len(ids)} candidatura(s) espontânea(s) para preparar...")
+        if ids:
+            print(servico.preparar_lote(ids))
+        print("Revise na interface (Prontas) e envie com: python candidatar.py enviar --limite N")
+    for e in empresas.listar():
+        destino = e.get("email") or ("portal: " + e["portal"] if e.get("portal") else
+                                     ("não publicado" if e.get("verificada_em") else "não procurado"))
+        print(f"  {e['nome'][:28]:<28} {destino[:60]:<60} {e.get('status') or ''}")
+
+
 def cmd_status(args):
     repositorio.iniciar()
     m = repositorio.metricas()
@@ -270,6 +327,22 @@ def main(argv=None):
     a.add_argument("--limite", type=int, default=10)
     a.add_argument("--mostrar", action="store_true", help="só mostra o comando, não cria a tarefa")
     a.set_defaults(f=cmd_agendar)
+
+    a = sub.add_parser("perfil", help="cadastro único: monta o perfil a partir do currículo, LinkedIn e GitHub")
+    a.add_argument("--cv", help="currículo em PDF, DOCX ou TXT")
+    a.add_argument("--linkedin-pdf", help="PDF do LinkedIn (perfil -> Mais -> Salvar em PDF)")
+    a.add_argument("--github", help="usuário ou link do GitHub")
+    a.add_argument("--linkedin", help="link do perfil no LinkedIn")
+    a.add_argument("--portfolio", help="link do portfólio")
+    a.add_argument("--saida", help="onde salvar (padrão: config/candidato.yaml)")
+    a.add_argument("--sem-ia", action="store_true")
+    a.set_defaults(f=cmd_perfil)
+
+    a = sub.add_parser("empresas", help="candidatura espontânea: acha e-mail de RH das empresas e prepara")
+    a.add_argument("--descobrir", action="store_true", help="visita os sites e procura o e-mail de recrutamento")
+    a.add_argument("--todas", action="store_true", help="com --descobrir: visita de novo também as já verificadas")
+    a.add_argument("--preparar", action="store_true", help="gera CV + carta para cada empresa com e-mail/portal")
+    a.set_defaults(f=cmd_empresas)
 
     sub.add_parser("status", help="resumo da fila e da configuração").set_defaults(f=cmd_status)
 

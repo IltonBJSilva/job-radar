@@ -19,7 +19,7 @@
     <h1>{{ candidato.nome }}</h1>
     <div>{{ candidato.titulo }} · {{ candidato.email }}{% if candidato.telefone %} · {{ candidato.telefone }}{% endif %}</div>
   </div>
-  <div class="meta">{{ data }}<br>A/C: {{ empresa or 'Equipe de Recrutamento' }} — vaga {{ titulo }}</div>
+  <div class="meta">{{ data }}<br>A/C: {{ empresa or 'Equipe de Recrutamento' }} — {{ referencia }}</div>
   <p>Prezados(as),</p>
   {% for par in carta.split('\n\n') %}<p>{{ par }}</p>{% endfor %}
   <div class="ass">Atenciosamente,

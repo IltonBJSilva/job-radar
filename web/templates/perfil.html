@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block titulo %}Meu perfil — Job Radar{% endblock %}
+{% block head %}
+<style>
+  .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+  @media (max-width: 700px) { .grade { grid-template-columns: 1fr; } }
+  .aviso { padding: 10px 14px; border-radius: 10px; background: var(--chip); color: var(--chip-ink); font-weight: 600; }
+  .aviso.ruim { background: var(--chip-miss); color: var(--chip-miss-ink); }
+  textarea.yaml { font: 13px/1.45 Consolas, "Cascadia Mono", monospace; min-height: 460px; }
+  input[type=file] { padding: 8px; }
+  .passo { font-size: 12px; font-weight: 800; color: var(--brand); text-transform: uppercase; letter-spacing: .6px; }
+</style>
+{% endblock %}
+{% block corpo %}
+{% if not gerado %}
+<div class="card" style="padding:22px 24px;margin-bottom:18px">
+  <div class="passo">Passo 1 de 2 — cadastro único</div>
+  <h1 style="margin:4px 0 6px;font-size:22px">{{ 'Monte seu perfil uma vez só' if primeira_vez else 'Atualizar perfil a partir do currículo' }}</h1>
+  <p class="muted" style="margin-top:0">Envie o que você já tem. O sistema lê, organiza e mostra tudo para você conferir.
+    Nada é inventado: o que não estiver no seu currículo ou GitHub fica em branco.</p>
+  {% if aviso %}<p class="aviso ruim">{{ aviso }}</p>{% endif %}
+  <form method="post" enctype="multipart/form-data">
+    <input type="hidden" name="acao" value="gerar">
+    <div class="grade">
+      <div>
+        <label for="p-cv">Currículo (PDF, DOCX ou TXT)</label>
+        <input id="p-cv" type="file" name="cv" accept=".pdf,.docx,.txt,.md">
+      </div>
+      <div>
+        <label for="p-li">PDF do LinkedIn (opcional)</label>
+        <input id="p-li" type="file" name="linkedin_pdf" accept=".pdf">
+        <div class="muted" style="font-size:12.5px;margin-top:4px">No LinkedIn: seu perfil → “Mais” → “Salvar em PDF”.</div>
+      </div>
+      <div>
+        <label for="p-gh">GitHub (usuário ou link)</label>
+        <input id="p-gh" name="github" placeholder="seu-usuario">
+      </div>
+      <div>
+        <label for="p-lk">Link do LinkedIn</label>
+        <input id="p-lk" name="linkedin" placeholder="https://www.linkedin.com/in/seu-perfil">
+      </div>
+      <div>
+        <label for="p-pf">Portfólio (opcional)</label>
+        <input id="p-pf" name="portfolio" placeholder="https://seu-portfolio.dev">
+      </div>
+    </div>
+    <label for="p-tx">…ou cole o texto do currículo / do “Sobre” e experiências do LinkedIn</label>
+    <textarea id="p-tx" name="texto" rows="6"></textarea>
+    <p><button class="btn primary">Ler e montar meu perfil</button></p>
+  </form>
+</div>
+{% endif %}
+
+<div class="card" style="padding:22px 24px">
+  <div class="passo">{{ 'Passo 2 de 2 — confira e salve' if gerado else 'Perfil atual' }}</div>
+  {% if gerado and aviso %}<p class="aviso {{ 'ruim' if aviso.startswith('Não') else '' }}">{{ aviso }}</p>{% endif %}
+  {% if avisos %}<p class="aviso ruim">Falta preencher: {{ avisos|join(', ') }}.</p>{% endif %}
+  <p class="muted" style="margin-top:6px">Este texto é o seu currículo-base. Cada vaga recebe uma versão que só reordena e
+    destaca o que está aqui. Em <code>conquistas</code>, prefira frases com resultado (“reduzi o tempo de deploy de 1h para 10min”).</p>
+  <form method="post">
+    <input type="hidden" name="acao" value="salvar">
+    <label for="p-yaml">Perfil (YAML)</label>
+    <textarea id="p-yaml" class="yaml" name="yaml" spellcheck="false">{{ yaml }}</textarea>
+    <p><button class="btn ok">Salvar e buscar vagas para mim</button>
+       {% if gerado %}<a class="btn" href="/perfil">Começar de novo</a>{% endif %}</p>
+  </form>
+</div>
+{% endblock %}

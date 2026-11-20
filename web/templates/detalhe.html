@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block titulo %}{{ v.titulo }} — Job Radar{% endblock %}
+{% block corpo %}
+<p><a href="javascript:history.back()">← voltar</a></p>
+<div class="card" style="padding:22px 24px">
+  <div class="muted" style="font-weight:700">{{ v.empresa or 'Empresa não informada' }} · {{ v.site }} · status: {{ v.status }}</div>
+  <h1 style="margin:4px 0 10px;font-size:24px">{{ v.titulo }}</h1>
+  <div><b>{{ v.score or 0 }}% compatível</b> —
+    {% for t in v.em_comum %}<span class="chip">✓ {{ t }}</span>{% endfor %}
+    {% for t in v.faltando %}<span class="chip miss">{{ t }}</span>{% endfor %}
+  </div>
+  {% if v.erro %}<p style="color:var(--no)">{{ v.erro }}</p>{% endif %}
+  <p style="margin-top:14px">
+    {% if v.cv_path %}<a class="btn" href="/arquivo/{{ v.id }}/cv" target="_blank">📄 Currículo adaptado</a> <a class="btn" href="/arquivo/{{ v.id }}/carta" target="_blank">✉️ Carta</a>{% endif %}
+    {% if v.link %}<a class="btn" href="{{ v.link }}" target="_blank" rel="noopener">Anúncio ↗</a>{% endif %}
+    {% if not v.cv_path %}<button class="btn primary" onclick="post('/api/preparar/{{ v.id }}').then(()=>{toast('Preparando…');setTimeout(()=>location.reload(),5000)})">Gerar currículo</button>{% endif %}
+  </p>
+
+  <form method="post">
+    <label>E-mail de destino {% if v.emails_encontrados %}<span class="muted">(encontrados: {{ v.emails_encontrados | join(', ') }})</span>{% endif %}</label>
+    <input name="email_destino" value="{{ v.email_destino or '' }}" placeholder="rh@empresa.com.br">
+    <label>Assunto</label>
+    <input name="assunto" value="{{ v.assunto or '' }}">
+    <label>Corpo do e-mail</label>
+    <textarea name="corpo" rows="14">{{ v.corpo or '' }}</textarea>
+    <p><button class="btn primary">Salvar</button>
+      {% if v.status == 'pronta' %}<button type="button" class="btn ok" onclick="post('/api/enviar/{{ v.id }}').then(r=>{toast(r.simulado?'Simulado (.eml salvo)':'✅ Enviado!');setTimeout(()=>location.reload(),1200)}).catch(e=>toast('Não enviado: '+e.message,5000))">Enviar agora</button>{% endif %}
+    </p>
+  </form>
+
+  <details style="margin-top:12px"><summary class="muted">Descrição da vaga</summary>
+    <div style="white-space:pre-line;font-size:14px;margin-top:8px">{{ v.descricao or 'Sem descrição.' }}</div>
+  </details>
+</div>
+{% endblock %}

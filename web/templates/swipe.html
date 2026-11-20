@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block titulo %}Descobrir vagas — Job Radar{% endblock %}
+{% block head %}
+<style>
+  .topo { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+  .topo .sp { flex: 1; }
+  .palco { position: relative; max-width: 620px; margin: 0 auto; min-height: min(560px, calc(100vh - 290px)); }
+  @media (max-width: 600px) { .palco { min-height: calc(100vh - 330px); } .redondo { width: 58px; height: 58px; } .acoes { margin-top: 12px; } }
+  .vaga { position: absolute; inset: 0; padding: 22px 24px; display: flex; flex-direction: column; touch-action: pan-y; user-select: none; transition: transform .28s ease, opacity .28s ease; }
+  .vaga.atras { transform: scale(.96) translateY(14px); opacity: .55; pointer-events: none; }
+  .vaga h2 { margin: 6px 0 2px; font-size: 22px; line-height: 1.25; }
+  .vaga .emp { font-weight: 700; color: var(--muted); }
+  .meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin: 8px 0 10px; }
+  .score { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; }
+  .barra { flex: 1; height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+  .barra i { display: block; height: 100%; border-radius: 99px; }
+  .desc { flex: 1; overflow: auto; white-space: pre-line; font-size: 13.5px; color: var(--muted); border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
+  .selo { position: absolute; top: 26px; font-size: 26px; font-weight: 900; padding: 4px 14px; border: 4px solid; border-radius: 10px; opacity: 0; transform: rotate(-12deg); }
+  .selo.sim { right: 24px; color: var(--ok); } .selo.nao { left: 24px; color: var(--no); transform: rotate(12deg); }
+  .acoes { display: flex; justify-content: center; gap: 22px; margin-top: 18px; }
+  .redondo { width: 68px; height: 68px; border-radius: 50%; font-size: 28px; border: 0; cursor: pointer; background: var(--card); box-shadow: var(--shadow); }
+  .redondo.no { color: var(--no); } .redondo.ok { color: var(--ok); } .redondo.undo { width: 52px; height: 52px; font-size: 20px; color: var(--warn); align-self: center; }
+  .vazio { text-align: center; padding: 70px 20px; }
+  .email-tag { font-size: 12.5px; font-weight: 700; color: var(--ok); }
+  .dica { text-align: center; font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+</style>
+{% endblock %}
+{% block corpo %}
+<div class="topo">
+  <button class="btn primary" onclick="importar()">🔄 Buscar vagas novas</button>
+  <button class="btn" onclick="enriquecer()" title="Baixa a descrição completa das melhores vagas para achar e-mail">✉️ Procurar e-mails</button>
+  <span class="sp"></span>
+  <label style="margin:0;display:flex;gap:6px;align-items:center;font-size:13.5px"><input type="checkbox" id="soEmail" style="width:auto" onchange="recarregar()"> só com e-mail</label>
+</div>
+
+<div class="palco" id="palco"></div>
+<div class="acoes" id="acoes">
+  <button class="redondo no" title="Descartar (←)" onclick="decidir('descartar')">✕</button>
+  <button class="redondo undo" title="Desfazer (Backspace)" onclick="desfazer()">↺</button>
+  <button class="redondo ok" title="Quero! (→)" onclick="decidir('curtir')">♥</button>
+</div>
+<div class="dica">← descartar · → quero (gera CV + carta adaptados) · arraste o cartão no celular</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let fila = [], historico = [];
+const esc = s => (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const cor = s => s >= 70 ? 'var(--ok)' : s >= 45 ? 'var(--warn)' : 'var(--no)';
+
+async function carregar() {
+  const filtro = document.getElementById('soEmail').checked ? 'email' : '';
+  const ids = new Set(fila.map(v => v.id));
+  const novas = await (await fetch('/api/proximas?n=6&filtro=' + filtro)).json();
+  novas.forEach(v => { if (!ids.has(v.id)) fila.push(v); });
+  render();
+}
+function recarregar() { fila = []; carregar(); }
+
+function render() {
+  const palco = document.getElementById('palco');
+  palco.innerHTML = '';
+  document.getElementById('acoes').style.visibility = fila.length ? 'visible' : 'hidden';
+  if (!fila.length) {
+    palco.innerHTML = `<div class="card vazio"><h2>Nada novo por aqui 🎉</h2><p class="muted">Clique em <b>Buscar vagas novas</b> para rodar o radar + GitHub + Remotar.</p></div>`;
+    return;
+  }
+  fila.slice(0, 2).reverse().forEach((v, i, arr) => {
+    const el = document.createElement('div');
+    el.className = 'card vaga' + (i < arr.length - 1 ? ' atras' : '');
+    el.innerHTML = `
+      <div class="selo sim">QUERO</div><div class="selo nao">NÃO</div>
+      <div class="emp">${esc(v.empresa) || 'Empresa não informada'} ${v.email ? '<span class="email-tag">· ✉ ' + esc(v.email) + '</span>' : ''}</div>
+      <h2>${esc(v.titulo)}</h2>
+      <div class="meta">${[v.modalidade, v.local, v.site, v.publicado_em].filter(Boolean).map(esc).join(' · ')}</div>
+      <div class="score"><b style="color:${cor(v.score)}">${v.score}% compatível</b><div class="barra"><i style="width:${v.score}%;background:${cor(v.score)}"></i></div></div>
+      <div>${v.em_comum.map(t => `<span class="chip">✓ ${esc(t)}</span>`).join('')}${v.faltando.slice(0, 6).map(t => `<span class="chip miss">${esc(t)}</span>`).join('')}</div>
+      <div class="desc">${esc(v.descricao) || '<i>Sem descrição — ao curtir, o sistema baixa a página da vaga.</i>'}</div>
+      ${v.link ? `<a href="${esc(v.link)}" target="_blank" rel="noopener" style="margin-top:10px;font-size:13px">Abrir anúncio original ↗</a>` : ''}`;
+    if (i === arr.length - 1) arrastavel(el);
+    palco.appendChild(el);
+  });
+}
+
+function arrastavel(el) {
+  let x0 = null, dx = 0;
+  el.addEventListener('pointerdown', e => { if (e.target.closest('a,.desc')) return; x0 = e.clientX; el.setPointerCapture(e.pointerId); el.style.transition = 'none'; });
+  el.addEventListener('pointermove', e => {
+    if (x0 === null) return; dx = e.clientX - x0;
+    el.style.transform = `translateX(${dx}px) rotate(${dx / 18}deg)`;
+    el.querySelector('.selo.sim').style.opacity = Math.max(0, dx / 120);
+    el.querySelector('.selo.nao').style.opacity = Math.max(0, -dx / 120);
+  });
+  el.addEventListener('pointerup', () => {
+    if (x0 === null) return; x0 = null; el.style.transition = '';
+    if (Math.abs(dx) > 110) decidir(dx > 0 ? 'curtir' : 'descartar');
+    else { el.style.transform = ''; el.querySelectorAll('.selo').forEach(s => s.style.opacity = 0); }
+    dx = 0;
+  });
+}
+
+async function decidir(acao) {
+  const v = fila[0]; if (!v) return;
+  const el = document.querySelector('.vaga:not(.atras)');
+  if (el) { el.style.transform = `translateX(${acao === 'curtir' ? 700 : -700}px) rotate(${acao === 'curtir' ? 25 : -25}deg)`; el.style.opacity = 0; }
+  fila.shift(); historico.push(v);
+  setTimeout(render, 220);
+  try {
+    await post('/api/decidir/' + v.id, { acao });
+    if (acao === 'curtir') toast(v.email ? '♥ Preparando CV + carta — vai para "Prontas"' : '♥ Preparando CV — sem e-mail, vai para "Sem e-mail"');
+  } catch (e) { toast('Erro: ' + e.message); }
+  if (fila.length < 3) carregar();
+}
+
+async function desfazer() {
+  const v = historico.pop(); if (!v) return toast('Nada para desfazer');
+  await post('/api/decidir/' + v.id, { acao: 'desfazer' });
+  fila.unshift(v); render();
+}
+
+async function importar() { await post('/api/importar'); toast('Buscando vagas… os cartões aparecem ao terminar.', 4000); esperar(); }
+async function enriquecer() { await post('/api/enriquecer'); toast('Baixando descrições das melhores vagas…', 4000); esperar(); }
+function esperar() {
+  const t = setInterval(async () => {
+    const e = await (await fetch('/api/estado')).json();
+    if (!e.ocupado) { clearInterval(t); recarregar(); toast('Pronto!'); }
+  }, 2500);
+}
+
+document.addEventListener('keydown', e => {
+  if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+  if (e.key === 'ArrowRight') decidir('curtir');
+  if (e.key === 'ArrowLeft') decidir('descartar');
+  if (e.key === 'Backspace') { e.preventDefault(); desfazer(); }
+});
+carregar();
+</script>
+{% endblock %}

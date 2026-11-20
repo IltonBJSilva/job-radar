@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block titulo %}Configurar perfil — Job Radar{% endblock %}
+{% block corpo %}
+<div class="card" style="padding:26px;max-width:720px;margin:30px auto">
+  <h1 style="margin-top:0">Falta só o seu perfil 👋</h1>
+  <p>O currículo de cada vaga é montado a partir de um único arquivo com os seus dados reais.</p>
+  <ol>
+    <li>Rode <code>python candidatar.py iniciar</code> (ou copie <code>{{ exemplo.name }}</code> para <code>{{ destino }}</code>).</li>
+    <li>Edite o arquivo com suas experiências, projetos e links.</li>
+    <li>Recarregue esta página.</li>
+  </ol>
+  <p class="muted">O arquivo fica fora do Git — seus dados não vão para o GitHub.</p>
+</div>
+{% endblock %}

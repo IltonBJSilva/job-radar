@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block titulo %}Candidaturas — Job Radar{% endblock %}
+{% block head %}
+<style>
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .kpi { padding: 14px 16px; }
+  .kpi b { font-size: 26px; display: block; }
+  .barra-acoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 14px; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+  tr:last-child td { border-bottom: 0; }
+  .t { font-weight: 700; } .acs { white-space: nowrap; }
+  .acs .btn { padding: 6px 10px; font-size: 13px; }
+  .erro { color: var(--no); font-size: 12.5px; }
+  @media (max-width: 720px) { .esconder { display: none; } td, th { padding: 9px 6px; } }
+</style>
+{% endblock %}
+{% block corpo %}
+<div class="kpis">
+  <div class="card kpi"><span class="muted">Enviadas hoje</span><b>{{ metricas.enviadas_hoje }} / {{ limite }}</b></div>
+  <div class="card kpi"><span class="muted">Enviadas (total)</span><b>{{ metricas.enviadas_reais }}</b></div>
+  <div class="card kpi"><span class="muted">Simuladas</span><b>{{ metricas.simuladas }}</b></div>
+  <div class="card kpi"><span class="muted">Compatibilidade média</span><b>{{ metricas.score_medio }}%</b></div>
+</div>
+
+{% if aba == 'pronta' %}
+<div class="barra-acoes">
+  <button class="btn primary" onclick="lote()">🚀 Enviar prontas (até <input id="lim" type="number" value="10" min="1" max="{{ limite }}" style="width:58px;padding:2px 6px;display:inline-block">)</button>
+  <span class="muted" style="font-size:13px">{{ 'Envio REAL com intervalo aleatório entre e-mails.' if envio_real else 'Modo simulação: gera .eml na pasta saida/ — nada é enviado.' }}</span>
+</div>
+{% elif aba == 'manual' %}
+<p class="muted">Essas vagas não têm e-mail. O currículo adaptado já está pronto: abra o anúncio, candidate-se pelo site anexando o PDF — ou cole um e-mail na vaga para virar "pronta".</p>
+{% endif %}
+
+<div class="card" style="overflow:auto">
+<table>
+  <tr><th>Vaga</th><th class="esconder">E-mail</th><th>%</th><th>Ações</th></tr>
+  {% for v in vagas %}
+  <tr id="l-{{ v.id }}">
+    <td><a class="t" href="/vaga/{{ v.id }}" style="color:inherit;text-decoration:none">{{ v.titulo }}</a><br>
+      <span class="muted">{{ v.empresa or '—' }} · {{ v.site }}{% if v.enviada_em %} · {{ 'simulada' if v.simulado else 'enviada' }} em {{ v.enviada_em[:16].replace('T',' ') }}{% endif %}</span>
+      {% if v.status == 'curtida' %}<br><span class="muted">⏳ preparando…</span>{% endif %}
+      {% if v.erro %}<div class="erro">{{ v.erro }}</div>{% endif %}
+    </td>
+    <td class="esconder">{{ v.email_destino or '—' }}</td>
+    <td><b>{{ v.score or 0 }}</b></td>
+    <td class="acs">
+      {% if v.cv_path %}<a class="btn" href="/arquivo/{{ v.id }}/cv" target="_blank">CV</a> <a class="btn" href="/arquivo/{{ v.id }}/carta" target="_blank">Carta</a>{% endif %}
+      {% if v.status == 'pronta' %}<button class="btn ok" onclick="enviar('{{ v.id }}', this)">Enviar</button>{% endif %}
+      {% if v.status in ('erro', 'curtida') %}<button class="btn" onclick="preparar('{{ v.id }}', this)">Refazer</button>{% endif %}
+      {% if v.link %}<a class="btn" href="{{ v.link }}" target="_blank" rel="noopener">↗</a>{% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="muted" style="text-align:center;padding:40px">Nada aqui ainda. Curta vagas na aba <a href="/">Descobrir</a>.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function enviar(id, b) {
+  b.disabled = true;
+  try { const r = await post('/api/enviar/' + id); toast(r.simulado ? 'Simulado: .eml salvo na pasta da vaga' : '✅ Enviado!'); document.getElementById('l-' + id).style.opacity = .35; }
+  catch (e) { toast('Não enviado: ' + e.message, 5000); b.disabled = false; }
+}
+async function preparar(id, b) { b.disabled = true; await post('/api/preparar/' + id); toast('Preparando…'); setTimeout(() => location.reload(), 4000); }
+async function lote() {
+  const n = parseInt(document.getElementById('lim').value || '10');
+  await post('/api/enviar-lote', { limite: n });
+  toast('Envio em lote iniciado — acompanhe no topo da página.', 4000);
+  const t = setInterval(async () => { const e = await (await fetch('/api/estado')).json(); if (!e.ocupado) { clearInterval(t); location.reload(); } }, 3000);
+}
+{% if aba == 'pronta' %}
+// Atualiza enquanto houver vagas sendo preparadas.
+if (document.body.innerText.includes('preparando…')) setTimeout(() => location.reload(), 5000);
+{% endif %}
+</script>
+{% endblock %}

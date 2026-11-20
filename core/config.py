@@ -66,8 +66,6 @@ QUALIFICADORES_DADOS = [
     "gcp",
     "google cloud",
     "cloud",
-    "api",
-    "apis",
     "django",
     "fastapi",
     "graphql",
@@ -79,8 +77,6 @@ QUALIFICADORES_DADOS = [
     "full stack",
     "fullstack",
     "full-stack",
-    "software",
-    "sistemas",
 ]
 
 # Ferramenta que aparece como núcleo do título ("Analista de Power BI").
@@ -118,8 +114,6 @@ QUALIFICADORES_CARGO = [
     "programadora",
     "architect",
     "arquiteto",
-    "analista",
-    "especialista",
     "backend",
     "back-end",
 ]
@@ -165,7 +159,9 @@ TERMOS_CARGO_EXTRA = [
     "cloud engineer",
 ]
 
-TERMOS_CARGO = sorted(set(k.lower() for k in KEYWORDS) | set(TERMOS_CARGO_EXTRA))
+# Só cargo FORTE vira busca: "developer"/"engenheiro" sozinhos trariam o
+# mundo inteiro e gastariam ciclo à toa.
+TERMOS_CARGO = sorted(set(k.lower() for k in KEYWORDS_CARGO_FORTE) | set(TERMOS_CARGO_EXTRA))
 
 # MEDIDO em jobradar.log (12 rodízios completos, Gupy+99Jobs+GeekHunter+
 # Solides): "dax" e "power query" nunca resultaram em nenhuma vaga nova
@@ -192,7 +188,8 @@ TERMOS_FERRAMENTA = [
     "ci/cd",
 ]
 
-TERMOS_BUSCA = TERMOS_CARGO + TERMOS_FERRAMENTA
+# dict.fromkeys: tira duplicados (python, docker... estavam nas duas listas) mantendo a ordem.
+TERMOS_BUSCA = list(dict.fromkeys(TERMOS_CARGO + TERMOS_FERRAMENTA))
 
 # Termos que rodam em TODO ciclo, fora do rodízio.
 #

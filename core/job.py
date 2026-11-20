@@ -1379,9 +1379,14 @@ class Job:
             if _normalizar(c) not in _FLAGS_REMOTO
         )
 
-        # HEURÍSTICA DE IDIOMA:
-        # Filtra as vagas somente quando a descrição está em português, conforme solicitado.
-        if bate_cidade:
+        # HEURÍSTICA DE IDIOMA: só vagas com descrição em português.
+        #
+        # MEDIDO (20/11): aplicada a TODA vaga, ela zerava o radar — a maioria
+        # dos scrapers só captura o card (título/empresa/local, ~100 chars),
+        # que nunca soma 2 palavras da lista. Produção: LinkedIn 2647 -> 1
+        # aprovada, Gupy 272 -> 0. Card não diz o idioma da vaga; então a
+        # regra só vale quando há descrição de verdade (>= 300 chars).
+        if bate_cidade and len(self.texto or "") >= 300:
             texto_completo = _normalizar(self.texto + " " + self.titulo)
             palavras_pt = [
                 "experiencia", "requisito", "conhecimento", "trabalho", 

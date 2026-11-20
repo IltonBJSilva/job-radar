@@ -188,7 +188,9 @@ _SCRAPERS_BR = [
     # DefinicaoScraper(IndeedScraper, FREQUENCIA_ALTA),       # ~1,1%
     DefinicaoScraper(CathoScraper, FREQUENCIA_BAIXA),       # <1%, timeout frequente em headless
     DefinicaoScraper(GeekHunterScraper, FREQUENCIA_BAIXA),  # <1%
-    DefinicaoScraper(Jobs99Scraper, FREQUENCIA_BAIXA),      # <1%, fonte confirmada funcionando
+    # 99Jobs: MEDIDO (20/11) 0 vagas até para "python" — o portal não tem
+    # vaga de tecnologia. Desligado; import mantido para religar se mudar.
+    # DefinicaoScraper(Jobs99Scraper, FREQUENCIA_BAIXA),
     DefinicaoScraper(WeWorkRemotelyIntlScraper, FREQUENCIA_BAIXA),  # nova, sem medição própria
     # MEDIDO ao vivo antes de ligar (3 termos, 398 vagas brutas): rendimento
     # de 0,3% — abaixo da Sólides (1,1%), a fonte mais fraca que ficou. A

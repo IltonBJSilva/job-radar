@@ -146,7 +146,7 @@ class Jobs99Scraper(BaseScraper):
                             link=link,
                             site="99Jobs",
                             publicado_em=publicado_em,
-                            texto=card.inner_text() if 'card' in locals() and hasattr(card, 'inner_text') else "",
+                            texto=card.inner_text(),
                                 modalidade=modalidade,
                         ))
                     except Exception as e:

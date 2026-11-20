@@ -26,6 +26,7 @@ REPOS_GITHUB = [
     "backend-br/vagas",
     "frontendbr/vagas",
     "react-brasil/vagas",
+    "datascience-br/vagas",  # vagas de Python/dados, ~1/3 com e-mail
 ]
 
 _UA = {"User-Agent": "job-radar-candidatura"}

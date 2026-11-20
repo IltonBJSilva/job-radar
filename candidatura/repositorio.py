@@ -8,6 +8,8 @@ Status de uma candidatura:
     manual      -> preparada, mas sem e-mail: candidate-se pelo link com o PDF gerado
     enviada     -> e-mail enviado (ou simulado, ver campo `simulado`)
     erro        -> falha no preparo/envio (ver campo `erro`)
+    respondida  -> a empresa respondeu (detectado via IMAP)
+    encerrada   -> a vaga foi fechada antes do envio
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from datetime import datetime, timedelta
 from candidatura import config
 from core.config import DB_PATH as RADAR_DB_PATH
 
-STATUS = ("nova", "descartada", "curtida", "pronta", "manual", "enviada", "erro")
+STATUS = ("nova", "descartada", "curtida", "pronta", "manual", "enviada", "erro", "respondida", "encerrada")
 
 _COLUNAS = """
     id TEXT PRIMARY KEY,
@@ -49,7 +51,12 @@ _COLUNAS = """
     simulado INTEGER DEFAULT 0,
     criada_em TEXT DEFAULT CURRENT_TIMESTAMP,
     atualizada_em TEXT DEFAULT CURRENT_TIMESTAMP,
-    enviada_em TEXT
+    enviada_em TEXT,
+    message_id TEXT,
+    followups INTEGER DEFAULT 0,
+    ultimo_followup_em TEXT,
+    resposta_em TEXT,
+    resposta_resumo TEXT
 """
 
 _JSON = ("emails_encontrados", "em_comum", "faltando")
@@ -73,6 +80,13 @@ def conectar():
 def iniciar():
     with conectar() as conn:
         conn.execute(f"CREATE TABLE IF NOT EXISTS candidaturas ({_COLUNAS})")
+        # Migração leve: bancos criados antes de follow-up/IMAP ganham as colunas novas.
+        existentes = {l[1] for l in conn.execute("PRAGMA table_info(candidaturas)")}
+        for linha in _COLUNAS.strip().splitlines():
+            linha = linha.strip().rstrip(",")
+            nome = linha.split()[0] if linha else ""
+            if nome and nome not in existentes and "PRIMARY KEY" not in linha and "NOT NULL" not in linha:
+                conn.execute(f"ALTER TABLE candidaturas ADD COLUMN {linha}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cand_status ON candidaturas (status, score)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cand_email ON candidaturas (email_destino)")
 
@@ -156,12 +170,17 @@ def contagem_por_status() -> dict[str, int]:
 
 
 def enviadas_hoje(incluir_simuladas: bool = False) -> int:
+    """E-mails que saíram hoje: candidaturas + follow-ups (o limite diário vale para o total)."""
     hoje = datetime.now().date().isoformat()
-    sql = "SELECT COUNT(*) FROM candidaturas WHERE status = 'enviada' AND substr(enviada_em, 1, 10) = ?"
-    if not incluir_simuladas:
-        sql += " AND simulado = 0"
+    filtro_sim = "" if incluir_simuladas else " AND simulado = 0"
     with conectar() as conn:
-        return conn.execute(sql, (hoje,)).fetchone()[0]
+        envios = conn.execute(
+            f"SELECT COUNT(*) FROM candidaturas WHERE substr(enviada_em, 1, 10) = ?{filtro_sim}", (hoje,)
+        ).fetchone()[0]
+        followups = conn.execute(
+            f"SELECT COUNT(*) FROM candidaturas WHERE substr(ultimo_followup_em, 1, 10) = ?{filtro_sim}", (hoje,)
+        ).fetchone()[0]
+    return envios + followups
 
 
 EMPRESAS_GENERICAS = {"", "confidencial", "empresa confidencial", "nao informado", "não informado",

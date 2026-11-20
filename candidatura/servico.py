@@ -158,6 +158,10 @@ def enviar(id_: str, real: bool | None = None, candidato: Candidato | None = Non
     if bloqueio:
         raise ErroEnvio(bloqueio)
 
+    if real and vaga_encerrada(vaga):
+        repositorio.atualizar(id_, status="encerrada", erro="A vaga foi fechada antes do envio.")
+        raise ErroEnvio("vaga encerrada (issue fechada no GitHub)")
+
     candidato = candidato or carregar_candidato()
     remetente = config.SMTP_USUARIO or candidato.email
     anexos = [p for p in (vaga.get("cv_path"), vaga.get("carta_path")) if p]
@@ -179,10 +183,28 @@ def enviar(id_: str, real: bool | None = None, candidato: Candidato | None = Non
         repositorio.atualizar(id_, status="erro", erro=f"envio: {e}")
         raise ErroEnvio(str(e)) from e
 
-    repositorio.atualizar(id_, status="enviada", simulado=0 if real else 1,
+    repositorio.atualizar(id_, status="enviada", simulado=0 if real else 1, message_id=msg["Message-ID"],
                           enviada_em=datetime.now().isoformat(timespec="seconds"), erro=None)
     logger.info(f"[Candidatura] {'ENVIADA' if real else 'Simulada'}: {vaga['titulo']} -> {vaga['email_destino']}")
     return repositorio.obter(id_)
+
+
+def vaga_encerrada(vaga: dict) -> bool:
+    """Issue do GitHub fechada = vaga preenchida/cancelada. Outras fontes não
+    expõem isso de forma confiável; na dúvida, considera aberta."""
+    import re
+
+    import requests
+
+    m = re.match(r"https://github\.com/([^/]+/[^/]+)/issues/(\d+)", vaga.get("link") or "")
+    if not m:
+        return False
+    try:
+        r = requests.get(f"https://api.github.com/repos/{m.group(1)}/issues/{m.group(2)}",
+                         headers={"User-Agent": "job-radar-candidatura"}, timeout=10)
+        return r.status_code == 200 and r.json().get("state") == "closed"
+    except Exception:
+        return False
 
 
 def enviar_lote(limite: int = 10, real: bool | None = None, ids: list[str] | None = None,

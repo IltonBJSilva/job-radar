@@ -7,6 +7,9 @@
     python candidatar.py preparar --top 10     gera CV + carta para as 10 melhores com e-mail
     python candidatar.py enviar --limite 10    envia as 'prontas' (simulação se ENVIO_REAL=false)
     python candidatar.py auto --limite 10      tudo acima de uma vez, sem revisão manual
+    python candidatar.py respostas             lê o Gmail (IMAP) e marca respondidas/bounces
+    python candidatar.py followup --limite 10  1 follow-up educado após 7 dias sem resposta
+    python candidatar.py agendar --hora 09:00  roda tudo todo dia (Agendador de Tarefas do Windows)
     python candidatar.py status                resumo da fila
 
 Envio real exige ENVIO_REAL=true no .env OU a flag --real (que pede confirmação).
@@ -131,6 +134,54 @@ def cmd_auto(args):
         print(f"  ERRO: {t[:60]} — {erro}")
 
 
+def cmd_respostas(args):
+    from candidatura import acompanhamento
+
+    print(acompanhamento.verificar_respostas(dias=args.dias))
+
+
+def cmd_followup(args):
+    from candidatura import acompanhamento
+
+    real = _confirmar_real(args)
+    try:
+        acompanhamento.verificar_respostas()
+    except Exception as e:
+        print(f"(aviso) não consegui ler respostas antes do follow-up: {e}")
+        if real:
+            print("Por segurança, follow-up real só roda depois de checar respostas. Abortando.")
+            sys.exit(1)
+    r = acompanhamento.enviar_followups(limite=args.limite, real=real, dias=args.dias)
+    print(f"{r['enviados']} follow-up(s) {'enviado(s)' if real else 'simulado(s)'}; erros: {r['erros']}")
+
+
+def cmd_agendar(args):
+    """Cria uma tarefa diária no Agendador de Tarefas do Windows."""
+    import os
+    import subprocess
+
+    raiz = os.path.dirname(os.path.abspath(__file__))
+    python = os.path.join(raiz, "venv", "Scripts", "python.exe")
+    if not os.path.exists(python):
+        python = sys.executable
+    script = os.path.join(raiz, "rodar_diario.cmd")
+    with open(script, "w", encoding="utf-8") as f:
+        f.write(
+            "@echo off\r\n"
+            f'cd /d "{raiz}"\r\n'
+            f'"{python}" candidatar.py importar --enriquecer 40\r\n'
+            + (f'"{python}" candidatar.py respostas\r\n' if config.SMTP_SENHA else "")
+            + (f'"{python}" candidatar.py auto --limite {args.limite}\r\n' if args.auto else "")
+        )
+    comando = ["schtasks", "/Create", "/F", "/SC", "DAILY", "/ST", args.hora, "/TN", "JobRadarCandidaturas",
+               "/TR", f'"{script}"']
+    print("Criando tarefa:", " ".join(comando))
+    if args.mostrar:
+        return
+    subprocess.run(comando, check=True)
+    print(f"Pronto: todo dia às {args.hora} o Windows roda {script}. Remover: schtasks /Delete /TN JobRadarCandidaturas /F")
+
+
 def cmd_status(args):
     repositorio.iniciar()
     m = repositorio.metricas()
@@ -183,6 +234,24 @@ def main(argv=None):
             a.add_argument("--score-min", type=int, default=None)
             a.add_argument("--sem-ia", action="store_true")
         a.set_defaults(f=func)
+
+    a = sub.add_parser("respostas")
+    a.add_argument("--dias", type=int, default=45)
+    a.set_defaults(f=cmd_respostas)
+
+    a = sub.add_parser("followup")
+    a.add_argument("--limite", type=int, default=10)
+    a.add_argument("--dias", type=int, default=7, help="dias sem resposta antes do follow-up")
+    a.add_argument("--real", action="store_true")
+    a.add_argument("--sem-confirmar", action="store_true")
+    a.set_defaults(f=cmd_followup)
+
+    a = sub.add_parser("agendar")
+    a.add_argument("--hora", default="09:00")
+    a.add_argument("--auto", action="store_true", help="além de buscar, também envia (modo auto) todo dia")
+    a.add_argument("--limite", type=int, default=10)
+    a.add_argument("--mostrar", action="store_true", help="só mostra o comando, não cria a tarefa")
+    a.set_defaults(f=cmd_agendar)
 
     sub.add_parser("status").set_defaults(f=cmd_status)
 

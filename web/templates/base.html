@@ -52,6 +52,7 @@
   <a class="tab {% if request.path == '/fila' and request.args.get('aba','pronta') == 'pronta' %}on{% endif %}" href="/fila?aba=pronta">Prontas<span class="badge">{{ contagem.pronta + contagem.curtida }}</span></a>
   <a class="tab {% if request.args.get('aba') == 'manual' %}on{% endif %}" href="/fila?aba=manual">Sem e-mail<span class="badge">{{ contagem.manual }}</span></a>
   <a class="tab {% if request.args.get('aba') == 'enviada' %}on{% endif %}" href="/fila?aba=enviada">Enviadas<span class="badge">{{ contagem.enviada }}</span></a>
+  {% if contagem.respondida %}<a class="tab {% if request.args.get('aba') == 'respondida' %}on{% endif %}" href="/fila?aba=respondida">Respostas<span class="badge">{{ contagem.respondida }}</span></a>{% endif %}
   {% if contagem.erro %}<a class="tab {% if request.args.get('aba') == 'erro' %}on{% endif %}" href="/fila?aba=erro">Erros<span class="badge">{{ contagem.erro }}</span></a>{% endif %}
   <a class="tab {% if request.path == '/nova' %}on{% endif %}" href="/nova">+ Vaga manual</a>
   <span id="status"></span>

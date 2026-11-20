@@ -42,6 +42,7 @@
       <span class="muted">{{ v.empresa or '—' }} · {{ v.site }}{% if v.enviada_em %} · {{ 'simulada' if v.simulado else 'enviada' }} em {{ v.enviada_em[:16].replace('T',' ') }}{% endif %}</span>
       {% if v.status == 'curtida' %}<br><span class="muted">⏳ preparando…</span>{% endif %}
       {% if v.erro %}<div class="erro">{{ v.erro }}</div>{% endif %}
+      {% if v.resposta_resumo %}<div style="color:var(--ok);font-size:13px">↩ {{ v.resposta_resumo }}</div>{% endif %}
     </td>
     <td class="esconder">{{ v.email_destino or '—' }}</td>
     <td><b>{{ v.score or 0 }}</b></td>

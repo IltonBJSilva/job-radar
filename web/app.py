@@ -135,6 +135,7 @@ def criar_app() -> Flask:
             "pronta": ["pronta", "curtida"],
             "manual": ["manual"],
             "enviada": ["enviada"],
+            "respondida": ["respondida"],
             "erro": ["erro"],
             "descartada": ["descartada"],
         }

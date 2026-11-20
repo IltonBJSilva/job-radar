@@ -17,3 +17,4 @@ config/candidato.yaml
 data/candidaturas.db*
 saida/
 .pytest_cache/
+rodar_diario.cmd

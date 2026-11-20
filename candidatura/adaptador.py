@@ -172,8 +172,8 @@ def montar_pacote(candidato: Candidato, vaga: dict, analise: Analise, usar_ia: b
     resumo = None
     carta = None
     if usar_ia and ia.disponivel():
-        resumo = ia.resumo_adaptado(candidato, titulo_vaga, empresa, descricao, declaradas)
-        carta = ia.carta_adaptada(candidato, titulo_vaga, empresa, descricao, declaradas)
+        resumo = ia.saida_segura(ia.resumo_adaptado(candidato, titulo_vaga, empresa, descricao, declaradas), candidato)
+        carta = ia.saida_segura(ia.carta_adaptada(candidato, titulo_vaga, empresa, descricao, declaradas), candidato)
         usou_ia = bool(resumo or carta)
 
     curriculo = CurriculoAdaptado(

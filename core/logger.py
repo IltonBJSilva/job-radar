@@ -1,6 +1,9 @@
 
 import logging
+import os
 import sys
+
+_LOG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "jobradar.log")
 
 
 def get_logger(name: str = "jobradar") -> logging.Logger:
@@ -19,7 +22,7 @@ def get_logger(name: str = "jobradar") -> logging.Logger:
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    file_handler = logging.FileHandler("jobradar.log", encoding="utf-8")
+    file_handler = logging.FileHandler(_LOG_PATH, encoding="utf-8")
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 

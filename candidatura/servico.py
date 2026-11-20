@@ -253,6 +253,20 @@ def enriquecer(score_minimo: int = 40, limite: int = 40, candidato: Candidato | 
 
 # ------------------------------------------------------- modo automático
 
+def dominio_da_empresa(email: str, empresa: str) -> bool:
+    """'jobs@milkboxmail.com' + 'MilkBox' -> True; 'fulano@gmail.com' -> False."""
+    import re
+
+    from candidatura.compatibilidade import normalizar
+
+    dominio = normalizar(email.rsplit("@", 1)[-1]).replace("-", "")
+    palavras = [p for p in re.findall(r"[a-z0-9]+", normalizar(empresa)) if len(p) >= 4]
+    junto = "".join(re.findall(r"[a-z0-9]+", normalizar(empresa)))
+    return bool(palavras or junto) and (
+        (len(junto) >= 4 and junto in dominio) or any(p in dominio for p in palavras)
+    )
+
+
 def auto(score_minimo: int | None = None, limite: int = 10, real: bool | None = None,
          usar_ia: bool = True, remotar_termos: list[str] | None = None) -> dict:
     """Sem swipe: importa, escolhe as vagas mais compatíveis QUE TÊM e-mail,
@@ -261,9 +275,13 @@ def auto(score_minimo: int | None = None, limite: int = 10, real: bool | None = 
     importacao = importar_tudo(remotar_termos=remotar_termos)
     enriquecer(score_minimo=max(0, score_minimo - 15))
     def email_de_recrutamento(v: dict) -> bool:
-        # Sem revisão humana, só envia para e-mail que aparece em contexto de
-        # candidatura (currículo/vagas/rh...) — nunca para comercial@, etica@...
-        return emails_com_relevancia(v.get("descricao") or "").get((v.get("email_destino") or "").lower(), 0) > 0
+        # Sem revisão humana, só envia para e-mail que (1) aparece em contexto
+        # de candidatura (currículo/vagas/rh...) e (2) é do domínio da empresa.
+        # Qualquer um pode abrir uma issue de "vaga" com um e-mail pessoal: sem
+        # a checagem de domínio, seu CV iria automaticamente para essa pessoa.
+        email = (v.get("email_destino") or "").lower()
+        relevante = emails_com_relevancia(v.get("descricao") or "").get(email, 0) > 0
+        return relevante and dominio_da_empresa(email, v.get("empresa") or "")
 
     candidatas = [
         v for v in repositorio.listar("nova", limite=5000)

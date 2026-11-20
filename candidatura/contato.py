@@ -124,19 +124,69 @@ def _url_linkedin_guest(link: str) -> str | None:
     return None
 
 
+TAMANHO_MAXIMO = 2 * 1024 * 1024  # 2 MB por página de vaga
+MAX_REDIRECIONAMENTOS = 5
+
+
+def url_publica(url: str) -> bool:
+    """Só http(s) para endereço público. Links de vaga vêm de terceiros
+    (issue do GitHub, Remotar): sem isso, um anúncio poderia fazer seu PC
+    acessar o roteador, 127.0.0.1 ou outro serviço da sua rede (SSRF)."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    partes = urlparse(url)
+    if partes.scheme not in ("http", "https") or not partes.hostname:
+        return False
+    try:
+        enderecos = {info[4][0] for info in socket.getaddrinfo(partes.hostname, partes.port or 443)}
+    except OSError:
+        return False
+    for endereco in enderecos:
+        ip = ipaddress.ip_address(endereco.split("%")[0])
+        if not ip.is_global or ip.is_multicast:
+            return False
+    return True
+
+
+def _baixar(url: str, timeout: int) -> str | None:
+    from urllib.parse import urljoin
+
+    cabecalhos = {"User-Agent": UA, "Accept-Language": "pt-BR,pt;q=0.9"}
+    for _ in range(MAX_REDIRECIONAMENTOS + 1):
+        if not url_publica(url):
+            logger.info(f"[Contato] URL recusada (não pública): {url}")
+            return None
+        with requests.get(url, headers=cabecalhos, timeout=timeout, stream=True, allow_redirects=False) as r:
+            if r.is_redirect and r.headers.get("Location"):
+                url = urljoin(url, r.headers["Location"])
+                continue
+            if r.status_code != 200:
+                logger.info(f"[Contato] HTTP {r.status_code} ao baixar {url}")
+                return None
+            pedacos, total = [], 0
+            for pedaco in r.iter_content(64 * 1024):
+                total += len(pedaco)
+                if total > TAMANHO_MAXIMO:
+                    break
+                pedacos.append(pedaco)
+            return b"".join(pedacos).decode(r.encoding or "utf-8", errors="replace")
+    return None
+
+
 def buscar_descricao(link: str, timeout: int = 20) -> str:
     """Baixa a página da vaga e devolve só o texto da descrição ('' se falhar)."""
     if not link:
         return ""
     url = _url_linkedin_guest(link) or link
     try:
-        r = requests.get(url, headers={"User-Agent": UA, "Accept-Language": "pt-BR,pt;q=0.9"}, timeout=timeout)
-        if r.status_code != 200:
-            logger.info(f"[Contato] HTTP {r.status_code} ao baixar {url}")
+        html = _baixar(url, timeout)
+        if not html:
             return ""
         # mailto: costuma estar só no atributo href, fora do texto visível.
-        mailtos = " ".join(re.findall(r"mailto:([^\"'?>\s]+)", r.text))
-        texto = _texto_de_html(r.text)
+        mailtos = " ".join(re.findall(r"mailto:([^\"'?>\s]+)", html))
+        texto = _texto_de_html(html)
         return (texto + ("\n" + mailtos if mailtos else "")).strip()
     except Exception as e:
         logger.info(f"[Contato] Falha ao baixar {url}: {e}")

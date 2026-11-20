@@ -393,3 +393,46 @@ def test_web_bloqueia_post_de_outro_site(banco, monkeypatch, tmp_path):
     ok = c.post("/api/decidir/inexistente", json={"acao": "descartar"}, headers={"Origin": "http://localhost"})
     assert ok.status_code == 200
     assert link_seguro("javascript:alert(1)") == "" and link_seguro("https://x.com") == "https://x.com"
+
+
+# ------------------------------------------------ regressões de segurança
+
+def test_dns_rebinding_bloqueado(banco, monkeypatch, tmp_path):
+    import yaml
+
+    perfil = tmp_path / "c.yaml"
+    perfil.write_text(yaml.safe_dump(PERFIL, allow_unicode=True), encoding="utf-8")
+    monkeypatch.setattr(config, "PERFIL_PATH", perfil)
+    from web.app import criar_app
+
+    c = criar_app().test_client()
+    mal = {"Host": "evil.test:5000", "Origin": "http://evil.test:5000"}
+    assert c.post("/api/enviar-lote", json={}, headers=mal).status_code == 403
+    assert c.get("/fila", headers={"Host": "evil.test:5000"}).status_code == 403
+    assert c.get("/fila", headers={"Host": "127.0.0.1:5000"}).status_code == 200
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1:5000/x", "http://localhost/", "http://192.168.0.1/",
+                                 "http://10.0.0.5/", "http://169.254.169.254/latest", "ftp://x.com/", "file:///c:/x"])
+def test_ssrf_recusa_enderecos_internos(url):
+    from candidatura.contato import url_publica
+
+    assert not url_publica(url)
+
+
+def test_ia_que_cita_link_estranho_e_descartada(candidato):
+    from candidatura.ia import saida_segura
+
+    assert saida_segura("Veja https://golpe.com", candidato) is None
+    assert saida_segura("Fale com pix@golpe.com", candidato) is None
+    assert saida_segura("Meu GitHub: https://github.com/ana", candidato) == "Meu GitHub: https://github.com/ana"
+
+
+@pytest.mark.parametrize("email, empresa, ok", [
+    ("jobs@milkboxmail.com", "MilkBox", True),
+    ("vagas@mimix.ai", "Mimix AI", True),
+    ("fulano@gmail.com", "Mimix AI", False),
+    ("rh@empresa.com", "", False),
+])
+def test_auto_so_envia_para_dominio_da_empresa(email, empresa, ok):
+    assert servico.dominio_da_empresa(email, empresa) is ok

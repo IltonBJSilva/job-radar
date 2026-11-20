@@ -52,6 +52,9 @@ class Trabalhador:
                 self.estado.update(ocupado=not self.fila.empty(), mensagem="")
 
 
+HOSTS_LOCAIS = {"127.0.0.1", "localhost"}
+
+
 def link_seguro(url: str | None) -> str:
     """Só http(s): bloqueia `javascript:` vindo de fonte externa."""
     url = (url or "").strip()
@@ -65,9 +68,14 @@ def criar_app() -> Flask:
 
     @app.before_request
     def bloquear_outros_sites():
-        """Proteção CSRF: qualquer página aberta no navegador poderia mandar
-        POST para 127.0.0.1 (ex.: disparar envio em lote ou trocar o e-mail de
-        destino). Só aceitamos POST cuja origem é este próprio app."""
+        """Proteção contra outros sites abertos no navegador.
+
+        1. DNS rebinding: um domínio do atacante pode apontar para 127.0.0.1;
+           o navegador então manda `Host: atacante.com`. Por isso TODA
+           requisição (inclusive GET, que lê seu CV) exige Host local.
+        2. CSRF: POST só vale se Origin/Referer for este próprio app."""
+        if (urlparse(f"//{request.host}").hostname or "") not in HOSTS_LOCAIS:
+            abort(403)
         if request.method != "POST":
             return None
         origem = request.headers.get("Origin") or request.headers.get("Referer") or ""

@@ -54,6 +54,8 @@ def importar_tudo(github: bool = True, remotar_termos: list[str] | None = None) 
         resultado["github"] = fontes.coletar_github()
     if remotar_termos:
         resultado["remotar"] = fontes.coletar_remotar(remotar_termos)
+        # Mesmos termos na Gupy: maior ATS do Brasil, com descrição completa.
+        resultado["gupy"] = fontes.coletar_gupy(remotar_termos)
     resultado["pontuadas"] = pontuar_novas()
     return resultado
 

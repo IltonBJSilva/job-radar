@@ -6,6 +6,9 @@ frequência, um e-mail para envio de currículo.
   brasileira publica vagas como issues; ~15% trazem e-mail no corpo.
   API pública, sem token: 60 req/h por IP (com GITHUB_TOKEN: 5.000/h).
 - Remotar (api.remotar.com.br): vagas remotas em JSON com descrição.
+- Gupy (portal.gupy.io/api/job-search): maior ATS do Brasil. Quase nunca
+  tem e-mail (candidatura é pela plataforma), mas traz a descrição completa:
+  o score fica preciso e o CV adaptado sai pronto para anexar no site.
 """
 
 from __future__ import annotations
@@ -179,4 +182,62 @@ def coletar_remotar(termos: list[str], paginas: int = 1) -> int:
                 logger.warning(f"[Remotar] '{termo}': {e}")
                 break
     logger.info(f"[Remotar] {novas} vaga(s) nova(s) na fila")
+    return novas
+
+
+_MODALIDADE_GUPY = {"remote": "Remoto", "hybrid": "Híbrido", "on-site": "Presencial"}
+
+
+def gupy_para_vaga(item: dict) -> dict | None:
+    from datetime import datetime, timezone
+
+    prazo = item.get("applicationDeadline")
+    if prazo:
+        try:
+            if datetime.fromisoformat(prazo.replace("Z", "+00:00")) < datetime.now(timezone.utc):
+                return None  # inscrições encerradas
+        except ValueError:
+            pass
+    descricao = html_para_texto(item.get("description") or "")
+    emails = extrair_emails(descricao)
+    local = ", ".join(x for x in (item.get("city"), item.get("state")) if x)
+    modalidade = _MODALIDADE_GUPY.get(item.get("workplaceType") or "", "")
+    return {
+        "id": repositorio.gerar_id(item.get("jobUrl") or f"gupy:{item.get('id')}"),
+        "titulo": (item.get("name") or "").strip(),
+        "empresa": (item.get("careerPageName") or "").strip(),
+        "local": local or modalidade,
+        "modalidade": modalidade,
+        "link": item.get("jobUrl") or "",
+        "site": "Gupy",
+        "origem": "gupy",
+        "publicado_em": (item.get("publishedDate") or "")[:10],
+        "descricao": descricao[:20000],
+        "emails_encontrados": emails,
+        "email_destino": emails[0] if emails else None,
+    }
+
+
+def coletar_gupy(termos: list[str], por_termo: int = 50) -> int:
+    novas = 0
+    for termo in termos:
+        try:
+            r = requests.get(
+                "https://portal.gupy.io/api/job-search/jobs",
+                params={"jobName": termo, "limit": por_termo, "offset": 0},
+                headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+                timeout=20,
+            )
+            if r.status_code != 200:
+                logger.warning(f"[Gupy] '{termo}': HTTP {r.status_code}")
+                continue
+            for item in r.json().get("data") or []:
+                vaga = gupy_para_vaga(item)
+                if not vaga or repositorio.existe_semelhante(vaga["titulo"], vaga.get("email_destino"), vaga.get("empresa")):
+                    continue
+                if repositorio.inserir(vaga):
+                    novas += 1
+        except Exception as e:
+            logger.warning(f"[Gupy] '{termo}': {e}")
+    logger.info(f"[Gupy] {novas} vaga(s) nova(s) na fila")
     return novas

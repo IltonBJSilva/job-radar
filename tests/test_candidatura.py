@@ -641,3 +641,13 @@ def test_vaga_em_ingles_nao_fica_pronta_para_envio(banco, candidato, monkeypatch
     repositorio.inserir({"id": "en1", "titulo": "Python Developer", "empresa": "ACME", "status": "curtida", "descricao": desc})
     v = servico.preparar("en1", candidato, usar_ia=False)
     assert v["status"] == "manual" and "inglês" in v["erro"]
+
+
+def test_gupy_item_vira_vaga_e_prazo_vencido_e_ignorado():
+    from candidatura.fontes import gupy_para_vaga
+
+    base = {"id": "1", "name": "Desenvolvedor Python", "careerPageName": "Stefanini", "workplaceType": "remote",
+            "jobUrl": "https://x.gupy.io/job/1", "description": "<p>Python e Django</p>", "publishedDate": "2026-11-19T00:00:00Z"}
+    v = gupy_para_vaga({**base, "applicationDeadline": "2099-01-01T00:00:00.000Z"})
+    assert v["modalidade"] == "Remoto" and v["site"] == "Gupy" and "Django" in v["descricao"]
+    assert gupy_para_vaga({**base, "applicationDeadline": "2020-01-01T00:00:00.000Z"}) is None

@@ -13,6 +13,8 @@ allowlist de mercado existe pra fechar.
 
 import pytest
 
+from tests.apoio import TEXTO_PT
+
 from core.job import extrair_escopo_remoto
 
 
@@ -114,11 +116,11 @@ from core.job import Job                     # noqa: E402
 from core.perfis import PERFIL_BR, PERFIL_INTL  # noqa: E402
 
 
-def _vaga(local, modalidade, titulo="Analista de Dados"):
+def _vaga(local, modalidade, titulo="Desenvolvedor Python"):
     return Job(
         titulo=titulo, empresa="Empresa Teste", local=local,
         link=f"https://exemplo.com/{abs(hash((local, modalidade, titulo)))}",
-        site="Teste", modalidade=modalidade,
+        site="Teste", modalidade=modalidade, texto=TEXTO_PT,
     )
 
 

@@ -27,7 +27,7 @@ def _hoje() -> date:
 
 def _vaga(publicado_em: str) -> Job:
     return Job(
-        titulo="Analista de Dados",
+        titulo="Desenvolvedor Python",
         empresa="Empresa",
         local="Brasil",
         link="https://www.linkedin.com/jobs/view/1/",

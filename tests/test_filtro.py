@@ -22,6 +22,8 @@ virar asserção, não deduzido lendo o comentário.
 
 import pytest
 
+from tests.apoio import TEXTO_PT
+
 from core.job import Job, extrair_escopo_remoto
 from core.perfis import PERFIL_BR, PERFIL_INTL
 
@@ -153,24 +155,24 @@ CASOS_COMBINA_COM = [
     # região (spanish/portuguese/latam/...) — regra adicionada depois que
     # "Senior Data Analyst" remoto sem relação nenhuma com o mercado
     # passava só por não ter nada que a rejeitasse.
-    ("spanish-speaking-sem-mercado-passa", "Spanish Speaking Data Analyst", "Remote", "Remoto", PERFIL_INTL, True),
-    ("data-analyst-latam-passa", "Data Analyst LATAM", "Remote", "Remoto", PERFIL_INTL, True),
+    ("spanish-speaking-sem-mercado-passa", "Spanish Speaking Python Developer", "Remote", "Remoto", PERFIL_INTL, True),
+    ("data-analyst-latam-passa", "Backend Developer LATAM", "Remote", "Remoto", PERFIL_INTL, True),
     ("sem-idioma-sem-mercado-barrada", "Senior Data Analyst", "Remote", "Remoto", PERFIL_INTL, False),
     # Mercado CONFIRMADO no texto dispensa o sinal de idioma no título — o
     # país hispanofalante já é o próprio sinal.
-    ("mercado-confirmado-dispensa-idioma-no-titulo", "Senior Data Analyst", "Remote - Espanha", "Remoto", PERFIL_INTL, True),
+    ("mercado-confirmado-dispensa-idioma-no-titulo", "Senior Backend Developer", "Remote - Espanha", "Remoto", PERFIL_INTL, True),
 
     # Perfil Brasil: cargo e cidade são checados em campos separados
     # (título vs. local) — cidade fora da lista aceita barra mesmo com
     # cargo batendo.
-    ("cidade-fora-da-lista-barrada", "Analista de Dados", "Nova York", "Presencial", PERFIL_BR, False),
+    ("cidade-fora-da-lista-barrada", "Desenvolvedor Python", "Nova York", "Presencial", PERFIL_BR, False),
     ("cargo-fora-do-escopo-barrado", "Vendedor Externo", "Recife, PE", "Presencial", PERFIL_BR, False),
-    ("cargo-forte-cidade-aceita-passa", "Analista de Dados Pleno", "Recife, PE", "Presencial", PERFIL_BR, True),
+    ("cargo-forte-cidade-aceita-passa", "Desenvolvedor Backend Pleno", "Recife, PE", "Presencial", PERFIL_BR, True),
     # keywords_ambiguo (ex: "Business Analyst") só conta com qualificador
     # de dados junto no título — sozinho é ruído de outra área (RH,
     # finanças).
     ("cargo-ambiguo-sem-qualificador-barrado", "Business Analyst", "Recife, PE", "Presencial", PERFIL_BR, False),
-    ("cargo-ambiguo-com-qualificador-passa", "Business Analyst com SQL", "Recife, PE", "Presencial", PERFIL_BR, True),
+    ("cargo-ambiguo-com-qualificador-passa", "Desenvolvedor Python Django", "Recife, PE", "Presencial", PERFIL_BR, True),
 ]
 
 
@@ -180,7 +182,7 @@ CASOS_COMBINA_COM = [
     ids=[c[0] for c in CASOS_COMBINA_COM],
 )
 def test_combina_com(nome, titulo, local, modalidade, perfil, esperado):
-    job = Job(
+    job = Job(texto=TEXTO_PT, 
         titulo=titulo, empresa="Teste", local=local, link=f"https://teste.invalido/{nome}",
         site="Teste", modalidade=modalidade,
     )
@@ -220,8 +222,8 @@ CASOS_PUBLICACAO_ANTIGA = [
     ids=[c[0] for c in CASOS_PUBLICACAO_ANTIGA],
 )
 def test_publicacao_antiga(nome, publicado_em, esperado):
-    job = Job(
-        titulo="Analista de Dados", empresa="Teste", local="Recife, PE",
+    job = Job(texto=TEXTO_PT, 
+        titulo="Desenvolvedor Python", empresa="Teste", local="Recife, PE",
         link=f"https://teste.invalido/{nome}", site="Teste", modalidade="Presencial",
         publicado_em=publicado_em,
     )

@@ -16,13 +16,15 @@ nenhum) e "Brasília, Federal District" — o LinkedIn escreve o DF em inglês.
 
 import pytest
 
+from tests.apoio import TEXTO_PT
+
 from core.job import Job, _normalizar, _uf_declarada
 from core.perfis import PERFIL_BR
 
 
 def _vaga(local: str, modalidade: str = "Presencial") -> Job:
-    return Job(
-        titulo="Analista de Dados",
+    return Job(texto=TEXTO_PT, 
+        titulo="Desenvolvedor Python",
         empresa="Empresa",
         local=local,
         link="https://www.linkedin.com/jobs/view/" + local,

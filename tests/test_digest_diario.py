@@ -54,7 +54,7 @@ def cenario(monkeypatch):
     # fim do arquivo.
     monkeypatch.setattr(main, "DIGEST_HORA_UTC", 0)
     monkeypatch.setattr(main, "obter_vagas_pendentes_digest",
-                        lambda p: [("Analista de Dados", "Empresa", "https://x/1", 6, 0)])
+                        lambda p: [("Desenvolvedor Python", "Empresa", "https://x/1", 6, 0)])
     return estado
 
 
@@ -194,7 +194,7 @@ def metadados(monkeypatch):
 
 
 def test_prioritarios_entram_em_todo_ciclo(metadados):
-    """MEDIDO: uma vaga real ("Analista de Dados", Recife) nunca foi buscada
+    """MEDIDO: uma vaga real ("Desenvolvedor Python", Recife) nunca foi buscada
     porque o termo so passava a cada 13 horas no rodizio alfabetico."""
     perfil = _PerfilFalso(list("abcdefghij") + ["ALVO"], por_ciclo=3, prioritarios=["ALVO"])
     for _ in range(6):

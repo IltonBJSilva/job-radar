@@ -436,3 +436,116 @@ def test_ia_que_cita_link_estranho_e_descartada(candidato):
 ])
 def test_auto_so_envia_para_dominio_da_empresa(email, empresa, ok):
     assert servico.dominio_da_empresa(email, empresa) is ok
+
+
+# ------------------------------------------ regressões: lógica (2ª revisão)
+
+def test_dois_envios_simultaneos_da_mesma_vaga_saem_uma_vez(banco, candidato, monkeypatch):
+    import threading
+    import time as _t
+
+    saidas = []
+
+    def smtp_lento(msg):
+        _t.sleep(0.2)
+        saidas.append(msg["To"])
+
+    monkeypatch.setattr(servico, "enviar_smtp", smtp_lento)
+    monkeypatch.setattr(servico, "vaga_encerrada", lambda v: False)
+    id_ = _vaga_pronta(banco)
+    erros = []
+
+    def tentar():
+        try:
+            servico.enviar(id_, real=True, candidato=candidato)
+        except ErroEnvio as e:
+            erros.append(str(e))
+
+    ts = [threading.Thread(target=tentar) for _ in range(2)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert saidas == ["rh@acme.com.br"] and len(erros) == 1
+
+
+def test_simulacao_nao_impede_envio_real_depois(banco, candidato, monkeypatch):
+    enviados = []
+    monkeypatch.setattr(servico, "enviar_smtp", lambda msg: enviados.append(msg["To"]))
+    monkeypatch.setattr(servico, "vaga_encerrada", lambda v: False)
+    monkeypatch.setattr(servico, "carregar_candidato", lambda: candidato)
+    id_ = _vaga_pronta(banco)
+    servico.enviar(id_, real=False, candidato=candidato)
+    r = servico.enviar_lote(limite=5, real=True)
+    assert r["enviadas"] == 1 and enviados == ["rh@acme.com.br"]
+    assert repositorio.obter(id_)["simulado"] == 0
+
+
+def test_lote_com_lista_de_ids_vazia_nao_envia_tudo(banco, candidato, monkeypatch):
+    monkeypatch.setattr(servico, "carregar_candidato", lambda: candidato)
+    _vaga_pronta(banco)
+    with pytest.raises(ValueError):
+        servico.enviar_lote(limite=5, real=False, ids=[])
+
+
+def test_cli_enviar_id_vazio_aborta(banco, monkeypatch):
+    import candidatar
+
+    _vaga_pronta(banco)
+    with pytest.raises(SystemExit):
+        candidatar.main(["enviar", "--id"])
+    assert repositorio.obter("v1")["status"] == "pronta"
+
+
+def test_cli_preparar_id_nao_reabre_enviada(banco, monkeypatch):
+    import candidatar
+
+    id_ = _vaga_pronta(banco)
+    repositorio.atualizar(id_, status="enviada")
+    monkeypatch.setattr(servico, "preparar_lote", lambda ids, usar_ia=True: {"ids": ids})
+    candidatar.main(["preparar", "--id", id_])
+    assert repositorio.obter(id_)["status"] == "enviada"
+
+
+@pytest.mark.parametrize("yaml_txt", [
+    "pessoal: {nome: Ana, email: a@b.com}\nhabilidades: Python, Django\n",
+    "pessoal: {nome: Ana, email: a@b.com}\nhabilidades: {Backend: 'Python, Django'}\nexperiencias: [null]\n",
+    "pessoal: {nome: Ana, email: a@b.com, telefone: 34999999999}\nlinks: [x]\ncertificacoes: [null, AWS]\nresumo: 123\n",
+])
+def test_perfil_malformado_e_normalizado(tmp_path, yaml_txt):
+    from candidatura.perfil import carregar_candidato
+
+    p = tmp_path / "c.yaml"
+    p.write_text(yaml_txt, encoding="utf-8")
+    c = carregar_candidato(p)
+    assert all(len(h) > 1 for h in c.todas_habilidades)  # nada de "P, y, t, h, o, n"
+    assert "None" not in c.certificacoes
+
+
+def test_perfil_com_erro_de_sintaxe_da_mensagem_clara(tmp_path):
+    from candidatura.perfil import PerfilInvalido, carregar_candidato
+
+    p = tmp_path / "c.yaml"
+    p.write_text("pessoal: [nome: Ana\n", encoding="utf-8")
+    with pytest.raises(PerfilInvalido):
+        carregar_candidato(p)
+
+
+def test_issue_de_regras_e_ignorada():
+    for titulo in ("[PT-BR] - Regras para publicar vagas", "ATENÇÃO: Leia nossas regras"):
+        assert issue_para_vaga({"title": titulo, "body": "", "html_url": "u", "labels": []}, "r/v") is None
+
+
+@pytest.mark.parametrize("titulo, empresa", [
+    ("[Remoto] Dev Backend - Igma | PJ", "Igma"),
+    ("[Remoto] Dev Backend na React.js, Nest.js, Kafka(Strider))", ""),
+    ("[Presencial] Dev Python - RJ", ""),
+])
+def test_empresa_extraida_com_limpeza(titulo, empresa):
+    assert _empresa_do_titulo(titulo) == empresa
+
+
+def test_mesma_vaga_em_dois_repos_entra_uma_vez(banco):
+    base = {"body": "Python. Envie CV para vagas@rotha.ai", "labels": [], "created_at": ""}
+    v1 = issue_para_vaga({**base, "title": "[Remoto] Dev Python na Rotha IA", "html_url": "https://github.com/a/v/issues/1"}, "a/v")
+    v2 = issue_para_vaga({**base, "title": "[Remoto] Dev Python na Rotha IA", "html_url": "https://github.com/b/v/issues/9"}, "b/v")
+    assert repositorio.inserir(v1)
+    assert repositorio.existe_semelhante(v2["titulo"], v2["email_destino"], v2["empresa"])

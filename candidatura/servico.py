@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import threading
 import time
 from contextlib import nullcontext
 from datetime import datetime
@@ -19,6 +20,16 @@ from core.logger import get_logger
 logger = get_logger()
 
 DESCRICAO_MINIMA = 300  # menos que isso é só o card do anúncio, não a vaga
+
+# Checagem de limite/repetição + reserva da vaga acontecem sob esta trava:
+# duas threads (botão "Enviar" + lote) nunca passam juntas pela checagem.
+_TRAVA_ENVIO = threading.Lock()
+
+
+def ja_enviada_de_verdade(vaga: dict) -> bool:
+    return vaga.get("status") in ("enviada", "enviando", "respondida") and not (
+        vaga.get("status") == "enviada" and vaga.get("simulado")
+    )
 
 
 # ------------------------------------------------------------- pontuação
@@ -52,14 +63,14 @@ def importar_tudo(github: bool = True, remotar_termos: list[str] | None = None) 
 def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF | None = None,
              usar_ia: bool = True) -> dict:
     """Gera CV + carta (HTML e PDF) + e-mail para a vaga. Não envia nada."""
-    candidato = candidato or carregar_candidato()
     vaga = repositorio.obter(id_)
     if not vaga:
         raise KeyError(f"Vaga {id_} não encontrada")
-    if vaga["status"] == "enviada":
+    if ja_enviada_de_verdade(vaga):
         raise ValueError("Vaga já enviada — não é preparada de novo (protege o histórico de envio).")
 
     try:
+        candidato = candidato or carregar_candidato()
         descricao = vaga.get("descricao") or ""
         if len(descricao) < DESCRICAO_MINIMA and vaga.get("link"):
             baixada = buscar_descricao(vaga["link"])
@@ -89,9 +100,14 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
         status = "pronta" if destino and email_valido(destino) else "manual"
         # Você pode ter desfeito/descartado enquanto o PDF era gerado: nesse
         # caso os arquivos ficam salvos, mas a vaga NÃO entra na fila de envio.
-        atual = (repositorio.obter(id_) or {}).get("status")
-        if atual in ("nova", "descartada", "enviada"):
+        agora = repositorio.obter(id_) or {}
+        atual = agora.get("status")
+        if atual in ("nova", "descartada", "enviada", "enviando", "respondida"):
             status = atual
+        # E-mail editado por você durante o preparo vence o encontrado.
+        if agora.get("email_destino") and agora.get("email_destino") != vaga.get("email_destino"):
+            destino = agora["email_destino"]
+            status = "pronta" if status in ("pronta", "manual") and email_valido(destino) else status
         repositorio.atualizar(
             id_,
             descricao=descricao,
@@ -111,7 +127,7 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
         logger.info(f"[Candidatura] Preparada ({status}, {analise.score}%): {vaga['titulo']} — {vaga.get('empresa')}")
     except Exception as e:
         atual = (repositorio.obter(id_) or {}).get("status")
-        if atual not in ("nova", "descartada", "enviada"):
+        if atual not in ("nova", "descartada", "enviada", "enviando", "respondida"):
             repositorio.atualizar(id_, status="erro", erro=f"preparo: {e}", cv_path=None, carta_path=None)
         logger.error(f"[Candidatura] Erro ao preparar {id_}: {e}")
         raise
@@ -134,7 +150,8 @@ def preparar_lote(ids: list[str], usar_ia: bool = True) -> dict:
 # ----------------------------------------------------------------- envio
 
 def motivo_bloqueio(vaga: dict, real: bool) -> str | None:
-    if vaga["status"] != "pronta":
+    simulada = vaga["status"] == "enviada" and vaga.get("simulado")
+    if vaga["status"] != "pronta" and not (real and simulada):
         return f"status '{vaga['status']}' (precisa estar 'pronta'; após erro, refaça o preparo)"
     destino = vaga.get("email_destino")
     if not destino or not email_valido(destino):
@@ -154,9 +171,13 @@ def enviar(id_: str, real: bool | None = None, candidato: Candidato | None = Non
     vaga = repositorio.obter(id_)
     if not vaga:
         raise KeyError(id_)
-    bloqueio = motivo_bloqueio(vaga, real)
-    if bloqueio:
-        raise ErroEnvio(bloqueio)
+    with _TRAVA_ENVIO:
+        vaga = repositorio.obter(id_)
+        bloqueio = motivo_bloqueio(vaga, real)
+        if bloqueio:
+            raise ErroEnvio(bloqueio)
+        if not repositorio.reservar_para_envio(id_, real):
+            raise ErroEnvio("outra ação já está enviando esta vaga")
 
     if real and vaga_encerrada(vaga):
         repositorio.atualizar(id_, status="encerrada", erro="A vaga foi fechada antes do envio.")
@@ -211,10 +232,19 @@ def enviar_lote(limite: int = 10, real: bool | None = None, ids: list[str] | Non
                 ao_progredir=None) -> dict:
     real = config.ENVIO_REAL if real is None else real
     candidato = carregar_candidato()
-    fila = [repositorio.obter(i) for i in ids] if ids else repositorio.listar("pronta")
+    if ids is not None and not ids:
+        raise ValueError("Lista de ids vazia — nada a enviar.")
+    if ids:
+        fila = [repositorio.obter(i) for i in ids]
+    else:
+        # Envio real também pega o que você revisou em modo simulação.
+        fila = repositorio.listar("pronta") + (
+            [v for v in repositorio.listar("enviada", limite=1000) if v.get("simulado")] if real else []
+        )
     resultado = {"enviadas": 0, "puladas": [], "erros": [], "real": real}
     falhas_conexao_seguidas = 0
-    for i, vaga in enumerate(f for f in fila if f):
+    houve_envio_real = False
+    for vaga in (f for f in fila if f):
         if resultado["enviadas"] >= limite:
             break
         bloqueio = motivo_bloqueio(vaga, real)
@@ -223,6 +253,10 @@ def enviar_lote(limite: int = 10, real: bool | None = None, ids: list[str] | Non
             if "limite diário" in bloqueio:
                 break
             continue
+        # Intervalo aleatório ANTES do próximo envio real (nunca depois do
+        # último): e-mails em rajada parecem spam.
+        if real and houve_envio_real:
+            time.sleep(random.uniform(config.INTERVALO_MIN_SEG, config.INTERVALO_MAX_SEG))
         try:
             enviar(vaga["id"], real=real, candidato=candidato)
             resultado["enviadas"] += 1
@@ -241,9 +275,8 @@ def enviar_lote(limite: int = 10, real: bool | None = None, ids: list[str] | Non
         except ErroEnvio as e:
             resultado["erros"].append((vaga["titulo"], str(e)))
             continue
-        # Intervalo aleatório entre envios reais: e-mails em rajada parecem spam.
-        if real and resultado["enviadas"] < limite:
-            time.sleep(random.uniform(config.INTERVALO_MIN_SEG, config.INTERVALO_MAX_SEG))
+        finally:
+            houve_envio_real = houve_envio_real or real
     return resultado
 
 

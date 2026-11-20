@@ -93,8 +93,18 @@ def cmd_preparar(args):
     from candidatura import servico
 
     repositorio.iniciar()
-    if args.id:
-        ids = args.id
+    if args.id is not None:
+        if not args.id:
+            sys.exit("--id sem valores: informe ao menos um id.")
+        ids = []
+        for i in args.id:
+            v = repositorio.obter(i)
+            if not v:
+                print(f"  ignorado: {i} não existe")
+            elif servico.ja_enviada_de_verdade(v):
+                print(f"  ignorado: {v['titulo'][:50]} já foi enviada")
+            else:
+                ids.append(i)
     else:
         vagas = [v for v in repositorio.listar(["nova", "curtida"], limite=5000)
                  if (v.get("score") or 0) >= args.score_min and (v.get("email_destino") or args.incluir_sem_email)]
@@ -112,7 +122,9 @@ def cmd_enviar(args):
     def progresso(v, r):
         print(f"  {'✅ enviada' if real else '📝 simulada'}: {v['titulo'][:60]} -> {v['email_destino']}")
 
-    r = servico.enviar_lote(limite=args.limite, real=real, ids=args.id or None, ao_progredir=progresso)
+    if args.id is not None and not args.id:
+        sys.exit("--id sem valores: informe ao menos um id (nada foi enviado).")
+    r = servico.enviar_lote(limite=args.limite, real=real, ids=args.id, ao_progredir=progresso)
     print(f"\n{r['enviadas']} {'enviada(s)' if real else 'simulada(s) (.eml em saida/)'}")
     for t, motivo in r["puladas"]:
         print(f"  pulada: {t[:60]} — {motivo}")

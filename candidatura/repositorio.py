@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 from candidatura import config
 from core.config import DB_PATH as RADAR_DB_PATH
 
-STATUS = ("nova", "descartada", "curtida", "pronta", "manual", "enviada", "erro", "respondida", "encerrada")
+STATUS = ("nova", "descartada", "curtida", "pronta", "manual", "enviando", "enviada", "erro", "respondida", "encerrada")
 
 _COLUNAS = """
     id TEXT PRIMARY KEY,
@@ -197,13 +197,61 @@ def ja_contatado(email: str, empresa: str, dias: int, ignorar_id: str = "") -> b
         linha = conn.execute(
             """
             SELECT 1 FROM candidaturas
-            WHERE status = 'enviada' AND simulado = 0 AND id != ? AND enviada_em >= ?
-              AND (lower(email_destino) = lower(?) OR (? != '' AND lower(empresa) = lower(?)))
+            WHERE ((status IN ('enviada', 'respondida') AND simulado = 0 AND enviada_em >= ?2) OR status = 'enviando')
+              AND id != ?1
+              AND (lower(email_destino) = lower(?3) OR (?4 != '' AND lower(empresa) = lower(?4)))
             LIMIT 1
             """,
-            (ignorar_id, limite, email or "", empresa or "", empresa or ""),
+            (ignorar_id, limite, email or "", empresa or ""),
         ).fetchone()
     return linha is not None
+
+
+def reservar_para_envio(id_: str, real: bool) -> bool:
+    """Troca o status para 'enviando' de forma ATÔMICA. Dois cliques (ou o
+    botão + o lote) na mesma vaga: só um consegue a reserva, só um e-mail sai.
+    Envio real também aceita vaga que só foi simulada antes."""
+    condicao = "status = 'pronta'" + (" OR (status = 'enviada' AND simulado = 1)" if real else "")
+    with conectar() as conn:
+        cur = conn.execute(
+            f"UPDATE candidaturas SET status = 'enviando', atualizada_em = ? WHERE id = ? AND ({condicao})",
+            (datetime.now().isoformat(timespec="seconds"), id_),
+        )
+        return cur.rowcount == 1
+
+
+def liberar_envios_interrompidos() -> int:
+    """'enviando' que sobrou de um app fechado no meio do envio."""
+    with conectar() as conn:
+        cur = conn.execute(
+            "UPDATE candidaturas SET status = 'erro', erro = 'Envio interrompido — confira sua caixa de "
+            "Enviados antes de refazer.' WHERE status = 'enviando'"
+        )
+        return cur.rowcount
+
+
+def normalizar_titulo(titulo: str) -> str:
+    import re
+    import unicodedata
+
+    t = unicodedata.normalize("NFKD", titulo or "").encode("ascii", "ignore").decode().lower()
+    t = re.sub(r"[\(\[].*?[\)\]]", " ", t)
+    return " ".join(re.findall(r"[a-z0-9]+", t))
+
+
+def existe_semelhante(titulo: str, email: str | None, empresa: str | None) -> bool:
+    """A mesma vaga postada em vários repositórios/fontes (mesmo título e
+    mesmo e-mail ou empresa) entra uma vez só."""
+    alvo = normalizar_titulo(titulo)
+    if not alvo:
+        return False
+    with conectar() as conn:
+        linhas = conn.execute(
+            "SELECT titulo FROM candidaturas WHERE (? != '' AND lower(email_destino) = lower(?)) "
+            "OR (? != '' AND lower(empresa) = lower(?))",
+            (email or "", email or "", empresa or "", empresa or ""),
+        ).fetchall()
+    return any(normalizar_titulo(l[0]) == alvo for l in linhas)
 
 
 def importar_do_radar(limite: int = 2000, radar_db: str | None = None) -> int:

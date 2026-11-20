@@ -19,7 +19,7 @@ from flask import Flask, abort, jsonify, redirect, render_template, request, sen
 from candidatura import config, repositorio, servico
 from candidatura.contato import email_valido, extrair_emails
 from candidatura.compatibilidade import analisar
-from candidatura.perfil import PerfilNaoEncontrado, carregar_candidato
+from candidatura.perfil import PerfilInvalido, PerfilNaoEncontrado, carregar_candidato
 from core.logger import get_logger
 
 logger = get_logger()
@@ -65,6 +65,7 @@ def criar_app() -> Flask:
     app = Flask(__name__)
     app.jinja_env.filters["link_seguro"] = link_seguro
     repositorio.iniciar()
+    repositorio.liberar_envios_interrompidos()
 
     @app.before_request
     def bloquear_outros_sites():
@@ -90,10 +91,16 @@ def criar_app() -> Flask:
     for pendente in repositorio.listar("curtida", limite=500):
         trabalhador.agendar(f"Preparando {pendente['titulo'][:40]}", servico.preparar, pendente["id"])
 
+    erro_perfil = {"msg": ""}
+
     def candidato_ou_none():
         try:
+            erro_perfil["msg"] = ""
             return carregar_candidato()
         except PerfilNaoEncontrado:
+            return None
+        except PerfilInvalido as e:
+            erro_perfil["msg"] = str(e)
             return None
 
     def cartao(v: dict | None) -> dict | None:
@@ -125,7 +132,8 @@ def criar_app() -> Flask:
     @app.get("/")
     def swipe():
         if not candidato_ou_none():
-            return render_template("configurar.html", exemplo=config.PERFIL_EXEMPLO_PATH, destino=config.PERFIL_PATH)
+            return render_template("configurar.html", exemplo=config.PERFIL_EXEMPLO_PATH, destino=config.PERFIL_PATH,
+                                   erro=erro_perfil["msg"])
         return render_template("swipe.html")
 
     @app.get("/fila")
@@ -192,7 +200,13 @@ def criar_app() -> Flask:
             "emails_encontrados": emails,
             "status": "curtida",
         }
-        repositorio.inserir(vaga)
+        if not repositorio.inserir(vaga):
+            # Já estava na fila (ex.: veio do radar): completa com o que você colou.
+            existente = repositorio.obter(vaga["id"])
+            if servico.ja_enviada_de_verdade(existente):
+                return redirect(url_for("detalhe", id_=vaga["id"]))
+            repositorio.atualizar(vaga["id"], **{k: v for k, v in vaga.items()
+                                                 if k not in ("id", "site", "origem") and v})
         trabalhador.agendar(f"Preparando {vaga['titulo']}", servico.preparar, vaga["id"])
         return redirect(url_for("fila", aba="pronta"))
 
@@ -211,6 +225,9 @@ def criar_app() -> Flask:
         elif acao == "descartar":
             repositorio.atualizar(id_, status="descartada")
         elif acao == "desfazer":
+            v = repositorio.obter(id_) or abort(404)
+            if v["status"] not in ("descartada", "curtida", "pronta", "manual", "erro"):
+                return jsonify({"ok": False, "erro": "Essa vaga já foi enviada."}), 400
             repositorio.atualizar(id_, status="nova")
         else:
             abort(400)

@@ -63,10 +63,12 @@ def enviar_followups(limite: int = 10, real: bool | None = None, dias: int = DIA
     real = config.ENVIO_REAL if real is None else real
     candidato = candidato or carregar_candidato()
     resultado = {"enviados": 0, "erros": [], "real": real}
-    for vaga in pendentes_de_followup(dias)[:limite]:
+    for i, vaga in enumerate(pendentes_de_followup(dias)[:limite]):
         if real and repositorio.enviadas_hoje() >= config.LIMITE_DIARIO:
             resultado["erros"].append((vaga["titulo"], "limite diário atingido"))
             break
+        if real and i:
+            time.sleep(random.uniform(config.INTERVALO_MIN_SEG, config.INTERVALO_MAX_SEG))
         assunto = vaga.get("assunto") or f"Candidatura: {vaga['titulo']}"
         assunto = assunto if assunto.lower().startswith("re:") else f"Re: {assunto}"
         msg = montar_mensagem(candidato.nome, config.SMTP_USUARIO or candidato.email, vaga["email_destino"],
@@ -95,8 +97,6 @@ def enviar_followups(limite: int = 10, real: bool | None = None, dias: int = DIA
                                   ultimo_followup_em=datetime.now().isoformat(timespec="seconds"))
         resultado["enviados"] += 1
         logger.info(f"[Follow-up] {'ENVIADO' if real else 'Simulado'}: {vaga['titulo']} -> {vaga['email_destino']}")
-        if real:
-            time.sleep(random.uniform(config.INTERVALO_MIN_SEG, config.INTERVALO_MAX_SEG))
     return resultado
 
 

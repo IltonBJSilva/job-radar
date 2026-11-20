@@ -44,10 +44,15 @@ def _empresa_do_titulo(titulo: str) -> str:
     else:
         if " - " in sem_tags:
             empresa = sem_tags.rsplit(" - ", 1)[1].strip()
-    if empresa.lower() in _NAO_EMPRESA or len(empresa) < 2:
+    # "Igma | PJ" -> "Igma"; "Kafka(Strider))" -> descartado abaixo
+    empresa = re.split(r"\s*[|(\[]", empresa)[0].strip(" -,")
+    if (empresa.lower() in _NAO_EMPRESA or len(empresa) < 3 or len(empresa) > 40
+            or "," in empresa or re.fullmatch(r"[A-Z]{2}", empresa)):
         return ""
     return empresa
 
+
+_RE_NAO_VAGA = re.compile(r"\bregras?\b|\bleia\b|aten[cç][aã]o|read\s*me|como (publicar|divulgar)", re.I)
 
 _NAO_EMPRESA = {"remoto", "remote", "híbrido", "hibrido", "presencial", "pj", "clt", "júnior", "junior",
                 "pleno", "sênior", "senior", "brasil", "home office", "temporário", "freelancer"}
@@ -68,6 +73,8 @@ def issue_para_vaga(issue: dict, repo: str) -> dict | None:
     if "pull_request" in issue:
         return None
     titulo = (issue.get("title") or "").strip()
+    if _RE_NAO_VAGA.search(titulo):
+        return None
     corpo = issue.get("body") or ""
     rotulos = [l.get("name", "") for l in issue.get("labels", [])]
     emails = extrair_emails(corpo)
@@ -111,7 +118,9 @@ def coletar_github(repos: list[str] | None = None, por_repo: int = 100) -> int:
                 continue
             for issue in r.json():
                 vaga = issue_para_vaga(issue, repo)
-                if vaga and repositorio.inserir(vaga):
+                if not vaga or repositorio.existe_semelhante(vaga["titulo"], vaga.get("email_destino"), vaga.get("empresa")):
+                    continue
+                if repositorio.inserir(vaga):
                     novas += 1
         except Exception as e:
             logger.warning(f"[GitHub] {repo}: {e}")
@@ -159,7 +168,10 @@ def coletar_remotar(termos: list[str], paginas: int = 1) -> int:
                 for item in itens:
                     if item.get("expired") or item.get("active") is False:
                         continue
-                    if repositorio.inserir(remotar_para_vaga(item)):
+                    vaga = remotar_para_vaga(item)
+                    if repositorio.existe_semelhante(vaga["titulo"], vaga.get("email_destino"), vaga.get("empresa")):
+                        continue
+                    if repositorio.inserir(vaga):
                         novas += 1
                 if len(itens) < 50:
                     break

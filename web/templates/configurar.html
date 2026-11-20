@@ -2,7 +2,9 @@
 {% block titulo %}Configurar perfil — Job Radar{% endblock %}
 {% block corpo %}
 <div class="card" style="padding:26px;max-width:720px;margin:30px auto">
-  <h1 style="margin-top:0">Falta só o seu perfil 👋</h1>
+  {% if erro %}<h1 style="margin-top:0">Seu perfil tem um problema</h1>
+  <p style="color:var(--no);font-weight:600">{{ erro }}</p>
+  {% else %}<h1 style="margin-top:0">Falta só o seu perfil 👋</h1>{% endif %}
   <p>O currículo de cada vaga é montado a partir de um único arquivo com os seus dados reais.</p>
   <ol>
     <li>Rode <code>python candidatar.py iniciar</code> (ou copie <code>{{ exemplo.name }}</code> para <code>{{ destino }}</code>).</li>

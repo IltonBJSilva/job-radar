@@ -21,11 +21,13 @@ dezenas de vezes, ajustando currículo e carta para cada uma. O Job Radar automa
 | | O que faz |
 |---|---|
 | 🔍 **Radar** | Varre 11 fontes (LinkedIn, Gupy, Indeed, Sólides, Catho, 99Jobs, GeekHunter, Trampos, Senior, WeWorkRemotely…) a cada 3h no GitHub Actions, filtra por cargo/cidade/idioma e avisa no Telegram. |
-| 💌 **Fontes com e-mail** | Puxa vagas dos repositórios da comunidade (`backend-br/vagas`, `frontendbr/vagas`, `react-brasil/vagas`) e do Remotar — onde recrutadores costumam deixar o e-mail para envio de CV. |
+| 💌 **Fontes com e-mail** | Puxa vagas dos repositórios da comunidade (`backend-br`, `frontendbr`, `react-brasil`, `datascience-br`), do Remotar e da Gupy (com descrição completa). A mesma vaga em várias fontes entra uma vez só. |
 | 🃏 **Swipe** | Interface estilo Tinder: cada vaga vira um cartão com **% de compatibilidade**, tecnologias que você tem ✓ e as que faltam. → quero, ← descarto. |
 | 📄 **Currículo adaptado** | Para cada vaga curtida gera um PDF próprio: título, resumo e competências reordenados para o que a vaga pede, conquistas mais relevantes primeiro. **Nunca inventa nada.** |
 | ✉️ **Carta + e-mail** | Carta de apresentação e corpo do e-mail personalizados (empresa, cargo, evidências reais do seu perfil, links de portfólio). |
 | 🚀 **Envio em massa, com freio** | Envia por Gmail com limite diário, intervalo aleatório entre e-mails, sem repetir empresa — e começa em **modo simulação**. |
+| 🔁 **Follow-up e respostas** | Lê sua caixa do Gmail (IMAP, só leitura), marca quem respondeu e e-mails que voltaram, e manda **1** follow-up educado após 7 dias sem resposta. |
+| ⏰ **Todo dia sozinho** | `agendar` cria uma tarefa no Agendador do Windows para buscar (e, se quiser, enviar) todo dia. |
 | 🤖 **IA opcional e gratuita** | Groq, Gemini ou Ollama (local) deixam resumo e carta mais naturais. Sem IA, tudo funciona com modelos de texto. |
 
 ---
@@ -71,6 +73,9 @@ python candidatar.py listar --top 20            # melhores vagas por compatibili
 python candidatar.py preparar --top 10 --score-min 60
 python candidatar.py enviar --limite 10         # simulação (ou ENVIO_REAL=true / --real)
 python candidatar.py auto --limite 10           # tudo de uma vez: importa, escolhe, prepara e envia
+python candidatar.py respostas               # lê o Gmail: respondidas e bounces
+python candidatar.py followup --limite 10      # 1 follow-up após 7 dias sem resposta
+python candidatar.py agendar --hora 09:00      # tarefa diária (adicione --auto para também enviar)
 python candidatar.py status
 ```
 
@@ -96,9 +101,24 @@ tem** e a vaga pede é o maior ganho, sem o risco de inventar experiência.
 
 ---
 
+## Segurança e o que o sistema NUNCA faz
+
+- **Não envia nada sem você ligar:** o padrão é simulação (`.eml` em `saida/`). Envio real pede confirmação.
+- **Não inventa experiência:** o CV usa só o seu perfil, com as palavras que você escreveu.
+- **Não manda CV para qualquer um no modo `auto`:** só para e-mails em contexto de recrutamento **e** do domínio
+  da empresa (`vagas@empresa.com.br` para "Empresa"). E-mail pessoal (gmail etc.) fica para você revisar no swipe.
+- **Vaga em inglês não sai automaticamente:** fica em "Sem e-mail/revisar", porque CV e carta são em português.
+- **Não envia duas vezes:** reserva atômica por vaga e trava entre envios; não repete empresa por 30 dias.
+- **Interface só local:** aceita apenas `127.0.0.1`/`localhost` (bloqueia CSRF e DNS rebinding).
+- **Links de vagas não acessam sua rede:** downloads recusam IPs internos e páginas acima de 2 MB.
+- **IA (se ligada):** recebe nome, cidade, experiências e projetos (nunca telefone/e-mail). A descrição da vaga vai
+  marcada como "dados"; resposta que cite link ou e-mail fora do seu perfil é descartada.
+- **LGPD:** e-mails de recrutadores ficam só na sua máquina (`data/candidaturas.db`), usados apenas para a
+  candidatura. Apague o banco quando encerrar a busca.
+
 ## Boas práticas de envio (para não cair em spam)
 
-- Comece com **20–30 e-mails/dia** (o Gmail grátis aceita ~500, mas volume alto queima sua reputação).
+- Comece com **20–30 e-mails/dia** (contando follow-ups) (o Gmail grátis aceita ~500, mas volume alto queima sua reputação).
 - O sistema espera **60–180 s aleatórios** entre envios e manda **um e-mail por destinatário**.
 - Não repete a mesma empresa/e-mail por **30 dias** (`DIAS_SEM_REPETIR_EMPRESA`).
 - Credencial inválida ou limite do provedor interrompem o lote na hora.
@@ -130,7 +150,7 @@ job-radar/
 ├── database/                # SQLite do radar (data/jobs.db, versionado pelo robô)
 ├── notifier/                # Telegram: alertas, digest diário, 👍/👎
 ├── config/candidato.example.yaml
-└── tests/                   # 488 testes (CI a cada push)
+└── tests/                   # 550 testes (CI a cada push)
 ```
 
 **Privacidade:** `config/candidato.yaml`, `data/candidaturas.db`, `saida/` e `.env` estão no
@@ -138,6 +158,12 @@ job-radar/
 GitHub Actions.
 
 ### Radar no GitHub Actions
+
+> ⚠️ **Antes de dar push:** cadastre os segredos `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` em
+> *Settings → Secrets and variables → Actions* (sem eles o robô roda, mas não avisa ninguém). Se o push
+> conflitar em `data/jobs.db` (o robô commita esse arquivo a cada 3h), fique com a versão do remoto:
+> `git checkout --theirs data/jobs.db`.
+
 O workflow `.github/workflows/jobradar.yml` roda a cada 3h. Configure os segredos
 `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` no repositório. Cargos, termos e cidades ficam em
 `core/config.py` (Brasil) e `core/config_intl.py` (internacional).

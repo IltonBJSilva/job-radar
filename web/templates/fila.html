@@ -26,7 +26,8 @@
 
 {% if aba == 'pronta' %}
 <div class="barra-acoes">
-  <button class="btn primary" onclick="lote()">🚀 Enviar prontas (até <input id="lim" type="number" value="10" min="1" max="{{ limite }}" style="width:58px;padding:2px 6px;display:inline-block">)</button>
+  <label for="lim" style="margin:0;display:flex;align-items:center;gap:6px">Quantas: <input id="lim" type="number" value="10" min="1" max="{{ limite }}" style="width:70px;padding:6px 8px"></label>
+  <button class="btn primary" data-trava onclick="lote()">🚀 Enviar prontas</button>
   <span class="muted" style="font-size:13px">{{ 'Envio REAL com intervalo aleatório entre e-mails.' if envio_real else 'Modo simulação: gera .eml na pasta saida/ — nada é enviado.' }}</span>
 </div>
 {% elif aba == 'manual' %}
@@ -62,13 +63,16 @@
 {% block scripts %}
 <script>
 async function enviar(id, b) {
+  {% if envio_real %}if (!confirm('Enviar esta candidatura AGORA, de verdade?')) return;{% endif %}
   b.disabled = true;
   try { const r = await post('/api/enviar/' + id); toast(r.simulado ? 'Simulado: .eml salvo na pasta da vaga' : '✅ Enviado!'); document.getElementById('l-' + id).style.opacity = .35; }
   catch (e) { toast('Não enviado: ' + e.message, 5000); b.disabled = false; }
 }
 async function preparar(id, b) { b.disabled = true; await post('/api/preparar/' + id); toast('Preparando…'); setTimeout(() => location.reload(), 4000); }
 async function lote() {
-  const n = parseInt(document.getElementById('lim').value || '10');
+  const n = Math.max(1, parseInt(document.getElementById('lim').value || '10'));
+  const modo = {{ 'true' if envio_real else 'false' }} ? 'ENVIAR DE VERDADE' : 'SIMULAR (gerar .eml)';
+  if (!confirm(`${modo} até ${n} candidatura(s)?`)) return;
   await post('/api/enviar-lote', { limite: n });
   toast('Envio em lote iniciado — acompanhe no topo da página.', 4000);
   const t = setInterval(async () => { const e = await (await fetch('/api/estado')).json(); if (!e.ocupado) { clearInterval(t); location.reload(); } }, 3000);

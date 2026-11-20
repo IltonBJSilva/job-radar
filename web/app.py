@@ -123,9 +123,22 @@ def criar_app() -> Flask:
             vagas = [v for v in vagas if v.get("email_destino")]
         return [cartao(v) for v in vagas[:n]]
 
+    rotulos = {
+        "nova": "Nova — ainda não avaliada", "descartada": "Descartada", "curtida": "Preparando currículo…",
+        "pronta": "Pronta para enviar", "manual": "Sem e-mail — candidate-se pelo site com o PDF",
+        "enviando": "Enviando…", "erro": "Erro — veja a mensagem abaixo", "respondida": "A empresa respondeu!",
+        "encerrada": "Vaga encerrada",
+    }
+
+    def rotulo_status(status: str, simulado: int = 0) -> str:
+        if status == "enviada":
+            return "Simulada (.eml gerado — pode ser enviada de verdade)" if simulado else "Enviada"
+        return rotulos.get(status, status)
+
     @app.context_processor
     def globais():
-        return {"envio_real": config.ENVIO_REAL, "contagem": repositorio.contagem_por_status()}
+        return {"envio_real": config.ENVIO_REAL, "contagem": repositorio.contagem_por_status(),
+                "rotulo_status": rotulo_status}
 
     # ------------------------------------------------------------ páginas
 

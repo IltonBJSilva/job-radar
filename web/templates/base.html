@@ -7,7 +7,7 @@
 <style>
   :root {
     --bg: #f4f6fb; --card: #ffffff; --ink: #172036; --muted: #5d6781; --line: #e2e7f2;
-    --brand: #3460e0; --brand-ink: #ffffff; --ok: #12a26b; --no: #e0485a; --warn: #c98612;
+    --brand: #3460e0; --brand-ink: #ffffff; --ok: #0b7f53; --no: #c8283c; --warn: #9a6400;
     --chip: #eef2fd; --chip-ink: #2a4bb0; --chip-miss: #fbeef0; --chip-miss-ink: #a2384a;
     --shadow: 0 12px 34px rgba(23, 32, 54, .10);
   }
@@ -40,6 +40,16 @@
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
   input, textarea { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; }
   label { font-weight: 600; font-size: 13px; color: var(--muted); display: block; margin: 12px 0 4px; }
+  @media (max-width: 600px) {
+    nav { flex-wrap: nowrap; overflow-x: auto; padding: 10px 12px; scrollbar-width: none; }
+    nav .tab, nav .modo { white-space: nowrap; flex-shrink: 0; }
+    nav .logo { display: none; }
+    #status { display: none; }
+  }
+  .ocupado-banner { display: none; background: var(--chip); color: var(--chip-ink); padding: 8px 16px; font-weight: 600; font-size: 14px; text-align: center; }
+  .ocupado-banner.on { display: block; }
+  .spin { display: inline-block; animation: girar 1s linear infinite; }
+  @keyframes girar { to { transform: rotate(360deg); } }
   #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 600; display: none; z-index: 20; max-width: 90vw; }
   #status { font-size: 12.5px; color: var(--muted); margin-left: 8px; }
 </style>
@@ -48,18 +58,19 @@
 <body>
 <nav>
   <span class="logo">📡 Job Radar</span>
-  <a class="tab {% if request.path == '/' %}on{% endif %}" href="/">Descobrir<span class="badge">{{ contagem.nova }}</span></a>
-  <a class="tab {% if request.path == '/fila' and request.args.get('aba','pronta') == 'pronta' %}on{% endif %}" href="/fila?aba=pronta">Prontas<span class="badge">{{ contagem.pronta + contagem.curtida }}</span></a>
-  <a class="tab {% if request.args.get('aba') == 'manual' %}on{% endif %}" href="/fila?aba=manual">Sem e-mail<span class="badge">{{ contagem.manual }}</span></a>
-  <a class="tab {% if request.args.get('aba') == 'enviada' %}on{% endif %}" href="/fila?aba=enviada">Enviadas<span class="badge">{{ contagem.enviada }}</span></a>
+  <a class="tab {% if request.path == '/' %}on{% endif %}" href="/">Descobrir<span class="badge" data-conta="nova">{{ contagem.nova }}</span></a>
+  <a class="tab {% if request.path == '/fila' and request.args.get('aba','pronta') == 'pronta' %}on{% endif %}" href="/fila?aba=pronta">Prontas<span class="badge" data-conta="pronta+curtida">{{ contagem.pronta + contagem.curtida }}</span></a>
+  <a class="tab {% if request.args.get('aba') == 'manual' %}on{% endif %}" href="/fila?aba=manual">Sem e-mail<span class="badge" data-conta="manual">{{ contagem.manual }}</span></a>
+  <a class="tab {% if request.args.get('aba') == 'enviada' %}on{% endif %}" href="/fila?aba=enviada">Enviadas<span class="badge" data-conta="enviada">{{ contagem.enviada }}</span></a>
   {% if contagem.respondida %}<a class="tab {% if request.args.get('aba') == 'respondida' %}on{% endif %}" href="/fila?aba=respondida">Respostas<span class="badge">{{ contagem.respondida }}</span></a>{% endif %}
   {% if contagem.erro %}<a class="tab {% if request.args.get('aba') == 'erro' %}on{% endif %}" href="/fila?aba=erro">Erros<span class="badge">{{ contagem.erro }}</span></a>{% endif %}
   <a class="tab {% if request.path == '/nova' %}on{% endif %}" href="/nova">+ Vaga manual</a>
   <span id="status"></span>
   <span class="modo {{ 'real' if envio_real else 'sim' }}" title="Altere ENVIO_REAL no .env">{{ 'ENVIO REAL' if envio_real else 'MODO SIMULAÇÃO' }}</span>
 </nav>
+<div class="ocupado-banner" id="ocupado" role="status" aria-live="polite"><span class="spin">⏳</span> <span id="ocupado-msg"></span></div>
 <main>{% block corpo %}{% endblock %}</main>
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 <script>
   function toast(msg, ms = 2600) {
     const t = document.getElementById('toast'); t.textContent = msg; t.style.display = 'block';
@@ -71,11 +82,22 @@
     if (!r.ok) throw new Error(j.erro || ('HTTP ' + r.status));
     return j;
   }
+  window.estadoAtual = { ocupado: false };
   async function pollEstado() {
     try {
       const e = await (await fetch('/api/estado')).json();
+      window.estadoAtual = e;
       const s = document.getElementById('status');
-      s.textContent = e.ocupado ? '⏳ ' + (e.mensagem || 'trabalhando') + (e.pendentes ? ` (+${e.pendentes})` : '') : (e.ultimo_erro ? '⚠ ' + e.ultimo_erro : '');
+      s.textContent = e.ultimo_erro && !e.ocupado ? '⚠ ' + e.ultimo_erro : '';
+      // Banner visível (também no celular) enquanto algo pesado roda.
+      document.getElementById('ocupado').classList.toggle('on', !!e.ocupado);
+      document.getElementById('ocupado-msg').textContent = (e.mensagem || 'Trabalhando…') + (e.pendentes ? ` (+${e.pendentes} na fila)` : '');
+      // Botões que agendam trabalho pesado ficam travados até terminar.
+      document.querySelectorAll('[data-trava]').forEach(b => b.disabled = !!e.ocupado);
+      // Contadores do menu sempre atualizados.
+      document.querySelectorAll('[data-conta]').forEach(el => {
+        el.textContent = el.dataset.conta.split('+').reduce((n, k) => n + (e.contagem[k] || 0), 0);
+      });
     } catch (err) {}
   }
   setInterval(pollEstado, 2000); pollEstado();

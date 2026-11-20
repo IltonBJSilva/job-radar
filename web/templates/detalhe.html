@@ -3,7 +3,7 @@
 {% block corpo %}
 <p><a href="javascript:history.back()">← voltar</a></p>
 <div class="card" style="padding:22px 24px">
-  <div class="muted" style="font-weight:700">{{ v.empresa or 'Empresa não informada' }} · {{ v.site }} · status: {{ v.status }}</div>
+  <div class="muted" style="font-weight:700">{{ v.empresa or 'Empresa não informada' }} · {{ v.site }} · {{ rotulo_status(v.status, v.simulado) }}</div>
   <h1 style="margin:4px 0 10px;font-size:24px">{{ v.titulo }}</h1>
   <div><b>{{ v.score or 0 }}% compatível</b> —
     {% for t in v.em_comum %}<span class="chip">✓ {{ t }}</span>{% endfor %}
@@ -17,14 +17,14 @@
   </p>
 
   <form method="post">
-    <label>E-mail de destino {% if v.emails_encontrados %}<span class="muted">(encontrados: {{ v.emails_encontrados | join(', ') }})</span>{% endif %}</label>
-    <input name="email_destino" value="{{ v.email_destino or '' }}" placeholder="rh@empresa.com.br">
-    <label>Assunto</label>
-    <input name="assunto" value="{{ v.assunto or '' }}">
-    <label>Corpo do e-mail</label>
-    <textarea name="corpo" rows="14">{{ v.corpo or '' }}</textarea>
+    <label for="f-email">E-mail de destino {% if v.emails_encontrados %}<span class="muted">(encontrados: {{ v.emails_encontrados | join(', ') }})</span>{% endif %}</label>
+    <input id="f-email" name="email_destino" value="{{ v.email_destino or '' }}" placeholder="rh@empresa.com.br">
+    <label for="f-assunto">Assunto</label>
+    <input id="f-assunto" name="assunto" value="{{ v.assunto or '' }}">
+    <label for="f-corpo">Corpo do e-mail</label>
+    <textarea id="f-corpo" name="corpo" rows="14">{{ v.corpo or '' }}</textarea>
     <p><button class="btn primary">Salvar</button>
-      {% if v.status == 'pronta' %}<button type="button" class="btn ok" onclick="post('/api/enviar/{{ v.id }}').then(r=>{toast(r.simulado?'Simulado (.eml salvo)':'✅ Enviado!');setTimeout(()=>location.reload(),1200)}).catch(e=>toast('Não enviado: '+e.message,5000))">Enviar agora</button>{% endif %}
+      {% if v.status == 'pronta' %}<button type="button" class="btn ok" onclick="{% if envio_real %}if(!confirm('Enviar AGORA, de verdade?'))return;{% endif %}this.disabled=true;post('/api/enviar/{{ v.id }}').then(r=>{toast(r.simulado?'Simulado (.eml salvo)':'✅ Enviado!');setTimeout(()=>location.reload(),1200)}).catch(e=>toast('Não enviado: '+e.message,5000))">Enviar agora</button>{% endif %}
     </p>
   </form>
 

@@ -5,12 +5,12 @@
   <h1 style="margin-top:0;font-size:22px">Adicionar vaga manualmente</h1>
   <p class="muted">Viu uma vaga no LinkedIn, grupo de WhatsApp ou Instagram? Cole aqui. O sistema acha o e-mail na descrição, adapta seu currículo e escreve a carta.</p>
   <form method="post">
-    <label>Título da vaga *</label><input name="titulo" required placeholder="Desenvolvedor Backend Python Pleno">
-    <label>Empresa</label><input name="empresa">
-    <label>Link do anúncio</label><input name="link" placeholder="https://...">
-    <label>E-mail para envio (se não estiver na descrição)</label><input name="email" placeholder="vagas@empresa.com.br">
-    <label>Local / modalidade</label><input name="local" placeholder="Remoto">
-    <label>Descrição completa (cole tudo)</label><textarea name="descricao" rows="12"></textarea>
+    <label for="n-titulo">Título da vaga *</label><input id="n-titulo" name="titulo" required placeholder="Desenvolvedor Backend Python Pleno">
+    <label for="n-empresa">Empresa</label><input id="n-empresa" name="empresa">
+    <label for="n-link">Link do anúncio</label><input id="n-link" name="link" placeholder="https://...">
+    <label for="n-email">E-mail para envio (se não estiver na descrição)</label><input id="n-email" name="email" placeholder="vagas@empresa.com.br">
+    <label for="n-local">Local / modalidade</label><input id="n-local" name="local" placeholder="Remoto">
+    <label for="n-descricao">Descrição completa (cole tudo)</label><textarea id="n-descricao" name="descricao" rows="12"></textarea>
     <p><button class="btn primary">Adicionar e preparar</button></p>
   </form>
 </div>

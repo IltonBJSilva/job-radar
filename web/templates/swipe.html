@@ -4,8 +4,15 @@
 <style>
   .topo { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
   .topo .sp { flex: 1; }
-  .palco { position: relative; max-width: 620px; margin: 0 auto; min-height: min(560px, calc(100vh - 290px)); }
-  @media (max-width: 600px) { .palco { min-height: calc(100vh - 330px); } .redondo { width: 58px; height: 58px; } .acoes { margin-top: 12px; } }
+  .palco { position: relative; max-width: 620px; margin: 0 auto; min-height: min(560px, calc(100dvh - 290px)); }
+  @media (max-width: 600px) {
+    main { padding-top: 12px; }
+    .topo { margin-bottom: 10px; }
+    .palco { min-height: calc(100dvh - 300px); }
+    .redondo { width: 58px; height: 58px; }
+    .acoes { position: sticky; bottom: 8px; margin-top: 10px; }
+    .dica { display: none; }
+  }
   .vaga { position: absolute; inset: 0; padding: 22px 24px; display: flex; flex-direction: column; touch-action: pan-y; user-select: none; transition: transform .28s ease, opacity .28s ease; }
   .vaga.atras { transform: scale(.96) translateY(14px); opacity: .55; pointer-events: none; }
   .vaga h2 { margin: 6px 0 2px; font-size: 22px; line-height: 1.25; }
@@ -27,19 +34,19 @@
 {% endblock %}
 {% block corpo %}
 <div class="topo">
-  <button class="btn primary" onclick="importar()">🔄 Buscar vagas novas</button>
-  <button class="btn" onclick="enriquecer()" title="Baixa a descrição completa das melhores vagas para achar e-mail">✉️ Procurar e-mails</button>
+  <button class="btn primary" data-trava onclick="importar()">🔄 Buscar vagas novas</button>
+  <button class="btn" data-trava onclick="enriquecer()" title="Baixa a descrição completa das melhores vagas para achar e-mail">✉️ Procurar e-mails</button>
   <span class="sp"></span>
-  <label style="margin:0;display:flex;gap:6px;align-items:center;font-size:13.5px"><input type="checkbox" id="soEmail" style="width:auto" onchange="recarregar()"> só com e-mail</label>
+  <label style="margin:0;display:flex;gap:6px;align-items:center;font-size:13.5px"><input type="checkbox" id="soEmail" style="width:auto" onchange="this.blur(); recarregar()"> só com e-mail</label>
 </div>
 
 <div class="palco" id="palco"></div>
 <div class="acoes" id="acoes">
-  <button class="redondo no" title="Descartar (←)" onclick="decidir('descartar')">✕</button>
-  <button class="redondo undo" title="Desfazer (Backspace)" onclick="desfazer()">↺</button>
-  <button class="redondo ok" title="Quero! (→)" onclick="decidir('curtir')">♥</button>
+  <button class="redondo no" title="Descartar (←)" aria-label="Descartar vaga" onclick="decidir('descartar')">✕</button>
+  <button class="redondo undo" title="Desfazer (Backspace)" aria-label="Desfazer última decisão" onclick="desfazer()">↺</button>
+  <button class="redondo ok" title="Quero! (→)" aria-label="Quero esta vaga" onclick="decidir('curtir')">♥</button>
 </div>
-<div class="dica">← descartar · → quero (gera CV + carta adaptados) · arraste o cartão no celular</div>
+<div class="dica" id="dica">← descartar · → quero (gera CV + carta adaptados) · arraste o cartão no celular</div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -55,26 +62,32 @@ async function carregar() {
   render();
 }
 function recarregar() { fila = []; carregar(); }
+// Descrições do GitHub vêm em Markdown: mostra como texto limpo.
+const limparMarkdown = t => (t || '').replace(/^#{1,6}\s*/gm, '').replace(/\*\*(.*?)\*\*/g, '$1').replace(/^\s*[-*]\s+/gm, '• ').replace(/\[(.*?)\]\((.*?)\)/g, '$1');
 
 function render() {
   const palco = document.getElementById('palco');
   palco.innerHTML = '';
   document.getElementById('acoes').style.visibility = fila.length ? 'visible' : 'hidden';
+  document.getElementById('dica').style.visibility = fila.length ? 'visible' : 'hidden';
   if (!fila.length) {
-    palco.innerHTML = `<div class="card vazio"><h2>Nada novo por aqui 🎉</h2><p class="muted">Clique em <b>Buscar vagas novas</b> para rodar o radar + GitHub + Remotar.</p></div>`;
+    palco.innerHTML = document.getElementById('soEmail').checked
+      ? `<div class="card vazio"><h2>Nenhuma vaga com e-mail agora</h2><p class="muted">Desmarque <b>só com e-mail</b> para ver todas, ou clique em <b>Procurar e-mails</b> para baixar a descrição das melhores vagas.</p></div>`
+      : `<div class="card vazio"><h2>Nada novo por aqui 🎉</h2><p class="muted">Clique em <b>Buscar vagas novas</b> para rodar o radar + GitHub + Remotar.</p></div>`;
     return;
   }
   fila.slice(0, 2).reverse().forEach((v, i, arr) => {
     const el = document.createElement('div');
     el.className = 'card vaga' + (i < arr.length - 1 ? ' atras' : '');
+    if (i < arr.length - 1) el.inert = true;  // cartão de trás fora do Tab/leitor de tela
     el.innerHTML = `
       <div class="selo sim">QUERO</div><div class="selo nao">NÃO</div>
       <div class="emp">${esc(v.empresa) || 'Empresa não informada'} ${v.email ? '<span class="email-tag">· ✉ ' + esc(v.email) + '</span>' : ''}</div>
       <h2>${esc(v.titulo)}</h2>
-      <div class="meta">${[v.modalidade, v.local, v.site, v.publicado_em].filter(Boolean).map(esc).join(' · ')}</div>
+      <div class="meta">${[...new Set([v.modalidade, v.local, v.site, v.publicado_em].filter(Boolean))].map(esc).join(' · ')}</div>
       <div class="score"><b style="color:${cor(v.score)}">${v.score}% compatível</b><div class="barra"><i style="width:${v.score}%;background:${cor(v.score)}"></i></div></div>
       <div>${v.em_comum.map(t => `<span class="chip">✓ ${esc(t)}</span>`).join('')}${v.faltando.slice(0, 6).map(t => `<span class="chip miss">${esc(t)}</span>`).join('')}</div>
-      <div class="desc">${esc(v.descricao) || '<i>Sem descrição — ao curtir, o sistema baixa a página da vaga.</i>'}</div>
+      <div class="desc">${esc(limparMarkdown(v.descricao)) || '<i>Sem descrição — ao curtir, o sistema baixa a página da vaga.</i>'}</div>
       ${v.link ? `<a href="${esc(v.link)}" target="_blank" rel="noopener" style="margin-top:10px;font-size:13px">Abrir anúncio original ↗</a>` : ''}`;
     if (i === arr.length - 1) arrastavel(el);
     palco.appendChild(el);
@@ -117,8 +130,8 @@ async function desfazer() {
   fila.unshift(v); render();
 }
 
-async function importar() { await post('/api/importar'); toast('Buscando vagas… os cartões aparecem ao terminar.', 4000); esperar(); }
-async function enriquecer() { await post('/api/enriquecer'); toast('Baixando descrições das melhores vagas…', 4000); esperar(); }
+async function importar() { if (window.estadoAtual.ocupado) return toast('Aguarde a tarefa atual terminar.'); await post('/api/importar'); toast('Buscando vagas… os cartões aparecem ao terminar.', 4000); esperar(); }
+async function enriquecer() { if (window.estadoAtual.ocupado) return toast('Aguarde a tarefa atual terminar.'); await post('/api/enriquecer'); toast('Baixando descrições das melhores vagas…', 4000); esperar(); }
 function esperar() {
   const t = setInterval(async () => {
     const e = await (await fetch('/api/estado')).json();
@@ -127,7 +140,7 @@ function esperar() {
 }
 
 document.addEventListener('keydown', e => {
-  if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+  if (e.target.matches && e.target.matches('input[type=text], input[type=number], input:not([type]), textarea')) return;
   if (e.key === 'ArrowRight') decidir('curtir');
   if (e.key === 'ArrowLeft') decidir('descartar');
   if (e.key === 'Backspace') { e.preventDefault(); desfazer(); }

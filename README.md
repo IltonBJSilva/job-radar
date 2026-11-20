@@ -1,179 +1,174 @@
 <div align="center">
 
-<!-- ![JobRadar](assets/cover.png) -->
+# 📡 Job Radar
+### Encontra vagas, adapta seu currículo para cada uma e se candidata por e-mail — de graça
 
-# 📡 JobRadar
-### Monitor Automatizado de Vagas de Dados & BI
-
-![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![Playwright](https://img.shields.io/badge/Playwright-Scraping-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)
-![SQLite](https://img.shields.io/badge/SQLite-Banco%20versionado-07405E?style=for-the-badge&logo=sqlite&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Flask](https://img.shields.io/badge/Flask-Interface%20local-000000?style=for-the-badge&logo=flask&logoColor=white)
+![Playwright](https://img.shields.io/badge/Playwright-Scraping%20%2B%20PDF-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-Cron-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)
-![Tests](https://img.shields.io/badge/testes-73%20passing-success?style=for-the-badge)
-![Status](https://img.shields.io/badge/status-em%20produção-success?style=for-the-badge)
-
-**Autora:** Liliam Kezia Oliveira Souza
+![Custo](https://img.shields.io/badge/custo-R%24%200-success?style=for-the-badge)
 
 </div>
 
 ---
 
-## 💎 Proposta de Valor
+## O que é
 
-> Em cidade pequena, vaga boa de Dados/BI aparece pouco e some rápido — quem checa o board duas vezes por dia perde pra quem checou na primeira hora. **JobRadar** é um sistema de monitoramento contínuo que substitui essa checagem manual: varre **8 fontes** a cada **3 horas**, filtra por cargo/cidade/mercado/idioma com três níveis de confiança, pontua cada vaga por relevância e notifica no Telegram — rodando de graça, sem servidor próprio, 24 horas por dia.
+Procurar emprego tem duas partes chatas: **achar** vaga boa antes de todo mundo e **se candidatar**
+dezenas de vezes, ajustando currículo e carta para cada uma. O Job Radar automatiza as duas.
 
----
-
-## 🗂️ Sumário
-
-- [Visão Geral e Resultados](#-visão-geral-e-resultados)
-- [Como Funciona (Pipeline)](#-como-funciona-pipeline)
-- [Arquitetura Técnica](#%EF%B8%8F-arquitetura-técnica)
-- [Estrutura do Repositório](#-estrutura-do-repositório)
-- [Como Executar Localmente](#-como-executar-localmente)
-- [Testes Automatizados](#-testes-automatizados)
-
----
-
-## 📄 Visão Geral e Resultados
-
-O JobRadar é um sistema que opera **sem intervenção manual**, projetado para garantir máxima eficiência e custo zero de infraestrutura. 
-
-Em testes reais (entre 07 e 15 de agosto), o sistema processou **1.052 vagas únicas**. Os dados expõem as características da arquitetura atual:
-
-| Métrica / Achado | Valor |
+| | O que faz |
 |---|---|
-| 📊 **Vagas processadas** (deduplicadas) | **1.052** |
-| 🔗 **Concentração** (maior volume no LinkedIn) | **89,5%** |
-| 🧪 **Testes automatizados** (CI a cada push) | **73** |
-| 🌎 **Fontes monitoradas** (em paralelo) | **8** |
-| ⏱️ **Frequência de checagem** | **a cada 3h** |
-| 💰 **Custo de infraestrutura** | **R$ 0** |
-
-> **Nota sobre o LinkedIn:** A concentração no LinkedIn é um risco medido. Como o endpoint utilizado não é oficial e há risco de bloqueio, a estratégia atual foca em otimizar o rendimento das fontes secundárias (paginação profunda) em vez de apenas adicionar novas fontes.
-
----
-
-## 📸 Como a Notificação Chega pra Você
-
-<!-- ![Notificação no Telegram](assets/screenshots/notificacao.png) -->
-
-Vagas de **alta relevância** chegam em tempo real, informando o motivo da aprovação, o nível de senioridade e o link direto. Vagas regulares entram em um **resumo diário (digest)**, ranqueadas por relevância, evitando sobrecarregar seu Telegram com notificações não solicitadas.
+| 🔍 **Radar** | Varre 11 fontes (LinkedIn, Gupy, Indeed, Sólides, Catho, 99Jobs, GeekHunter, Trampos, Senior, WeWorkRemotely…) a cada 3h no GitHub Actions, filtra por cargo/cidade/idioma e avisa no Telegram. |
+| 💌 **Fontes com e-mail** | Puxa vagas dos repositórios da comunidade (`backend-br/vagas`, `frontendbr/vagas`, `react-brasil/vagas`) e do Remotar — onde recrutadores costumam deixar o e-mail para envio de CV. |
+| 🃏 **Swipe** | Interface estilo Tinder: cada vaga vira um cartão com **% de compatibilidade**, tecnologias que você tem ✓ e as que faltam. → quero, ← descarto. |
+| 📄 **Currículo adaptado** | Para cada vaga curtida gera um PDF próprio: título, resumo e competências reordenados para o que a vaga pede, conquistas mais relevantes primeiro. **Nunca inventa nada.** |
+| ✉️ **Carta + e-mail** | Carta de apresentação e corpo do e-mail personalizados (empresa, cargo, evidências reais do seu perfil, links de portfólio). |
+| 🚀 **Envio em massa, com freio** | Envia por Gmail com limite diário, intervalo aleatório entre e-mails, sem repetir empresa — e começa em **modo simulação**. |
+| 🤖 **IA opcional e gratuita** | Groq, Gemini ou Ollama (local) deixam resumo e carta mais naturais. Sem IA, tudo funciona com modelos de texto. |
 
 ---
 
-## 🧭 Como Funciona (Pipeline)
+## Começando (5 minutos)
 
-| Etapa | Descrição |
-|---|---|
-| 🔍 **Busca** | Varre as fontes em paralelo, aplicando rodízio de termos para controlar o escopo e evitar limites de requisição. |
-| 🎯 **Filtra** | Analisa cargo, qualificadores de dados, ferramentas, cidade, mercado (remoto/presencial) e idioma. |
-| ⭐ **Pontua** | Atribui um score de 0 a 10 para cada vaga com base em sinais claros (cargo, ferramenta, senioridade), sem o uso de IA. |
-| 🔄 **Deduplica** | Evita vagas repetidas cruzando link, empresa e título (útil para vagas publicadas em múltiplas fontes). |
-| 📲 **Notifica** | Envia alertas imediatos para vagas *top-tier* e um resumo diário ranqueado para as demais. |
-| 🧠 **Aprende** | Coleta feedback através de botões 👍/👎 no Telegram, utilizando os dados para mensurar precisão e refinar os filtros. |
-
----
-
-## 🏗️ Arquitetura Técnica
-
-- **Filtro Semântico (3 Níveis):** Um cargo inequívoco é aprovado de imediato. Cargos ambíguos (ex: "Business Analyst") exigem um qualificador da área de dados. Ferramentas (ex: "Power BI") necessitam estar acompanhadas de termos de cargo. Nenhuma vaga é aprovada por palavra-chave solta.
-- **Score Algorítmico:** Baseado em 5 sinais conhecidos (cargo, ferramenta, senioridade, mercado, idioma). Os pesos foram calibrados contra um histórico real de banco de dados.
-- **Zero Infraestrutura (Serverless):** Utiliza **GitHub Actions** como motor de Cron e **SQLite** (versionado no próprio Git) como banco de dados. O histórico de vagas é mantido nos commits do repositório.
-- **Resiliência e Tolerância a Falhas:** Nenhuma vaga é marcada como "vista" sem a confirmação de envio da notificação. O sistema emite alertas automáticos caso 50% das fontes falhem e envia um *heartbeat* diário confirmando sua atividade.
-- **CI / CD (Testes em Produção):** Com 73 testes em CI, cada cenário reflete um bug real corrigido no histórico do projeto, garantindo robustez contra regressões.
-
----
-
-## 📁 Estrutura do Repositório
-
-```text
-job-radar/
-├── README.md
-├── requirements.txt
-├── main.py                     # Motor principal: executa o ciclo de busca por perfil
-├── core/
-│   ├── perfis.py               # Configuração Brasil vs Internacional
-│   ├── config.py / config_intl.py # Configurações, cargos, termos e pesos
-│   └── job.py                  # Classe Job, regras de filtro e score
-├── relatorio_precisao.py       # Estatísticas de vagas aprovadas/notificadas
-├── database/
-│   └── database.py             # SQLite: deduplicação, fila de digest e metadados
-├── notifier/
-│   └── telegram.py             # Integração Telegram (notificações, digest e botões)
-├── scrapers/                   # Módulos de extração (LinkedIn, Gupy, Indeed, etc.)
-├── utils/
-│   └── filtro.py               # Funções de auxílio para filtragem
-├── tests/                      # 73 casos de teste automatizados
-├── data/
-│   └── jobs.db                 # Banco SQLite versionado
-└── .github/workflows/
-    ├── jobradar.yml            # Workflow de cron job (execução a cada 3h)
-    └── testes.yml              # CI para validação de PRs e pushes
-```
-
----
-
-## 💻 Como Executar Localmente
-
-### Pré-requisitos
-- Python 3.11+
-- Git
-
-### Passos de Instalação
-
-1. Clone o repositório:
 ```bash
 git clone https://github.com/IltonBJSilva/job-radar.git
 cd job-radar
-```
-
-2. Crie e ative um ambiente virtual:
-```bash
-# Windows
 python -m venv venv
-venv\Scripts\activate
-
-# Linux/macOS
-python -m venv venv
-source venv/bin/activate
-```
-
-3. Instale as dependências:
-```bash
+venv\Scripts\activate            # Linux/macOS: source venv/bin/activate
 pip install -r requirements.txt
-python -m playwright install chromium
+playwright install chromium
+
+copy .env.example .env           # Linux/macOS: cp .env.example .env
+python candidatar.py iniciar     # cria config/candidato.yaml
 ```
 
-4. Configure as Variáveis de Ambiente:
-Crie um arquivo `.env` na raiz do projeto contendo as chaves do seu bot do Telegram (criado via [@BotFather](https://t.me/BotFather)):
+1. **Preencha `config/candidato.yaml`** com seus dados reais: experiências, conquistas, projetos,
+   habilidades, links (GitHub, LinkedIn, portfólio). Esse arquivo é a única fonte do currículo e
+   fica fora do Git.
+2. **Abra a interface:**
+   ```bash
+   python candidatar.py app       # abre http://127.0.0.1:5000
+   ```
+3. Clique em **Buscar vagas novas**, faça o swipe, confira os PDFs na aba **Prontas** e clique
+   em **Enviar prontas**. No modo simulação, cada e-mail vira um arquivo `.eml` em `saida/` para você
+   abrir e conferir.
+4. Satisfeito? Configure o Gmail (abaixo) e troque `ENVIO_REAL=true` no `.env`.
 
-```env
-TELEGRAM_BOT_TOKEN=seu_token_aqui
-TELEGRAM_CHAT_ID=seu_chat_id_aqui
-```
-
-5. Execute o projeto:
-```bash
-python main.py --perfil brasil internacional --once
-```
+### Configurar o Gmail (grátis)
+1. Ative a [verificação em duas etapas](https://myaccount.google.com/security).
+2. Crie uma **senha de app** em <https://myaccount.google.com/apppasswords>.
+3. No `.env`: `SMTP_USUARIO=seu@gmail.com` e `SMTP_SENHA=<senha de app>`.
 
 ---
 
-## 🧪 Testes Automatizados
+## Linha de comando
 
-O sistema conta com uma suíte de 73 testes automatizados (parametrizados) que validam desde a camada de filtro e parsing de callbacks do Telegram até os relatórios de precisão.
-
-Para executá-los localmente:
 ```bash
-pytest tests/ -v
+python candidatar.py importar --enriquecer 40   # radar + GitHub + Remotar; baixa descrições p/ achar e-mails
+python candidatar.py listar --top 20            # melhores vagas por compatibilidade
+python candidatar.py preparar --top 10 --score-min 60
+python candidatar.py enviar --limite 10         # simulação (ou ENVIO_REAL=true / --real)
+python candidatar.py auto --limite 10           # tudo de uma vez: importa, escolhe, prepara e envia
+python candidatar.py status
 ```
-*Esses testes são executados automaticamente a cada push via GitHub Actions.*
+
+`auto` só escolhe vagas **com e-mail** e compatibilidade ≥ `SCORE_MINIMO_AUTO` (padrão 60%).
+Vagas sem e-mail ficam com o currículo adaptado pronto na aba **Sem e-mail**, para você se candidatar
+pelo site do anúncio anexando o PDF.
 
 ---
 
-<div align="center">
+## Como a adaptação funciona (e por que ela é honesta)
 
-*Projeto portfólio de automação de dados utilizando Python, Playwright, SQLite, GitHub Actions e engenharia avançada de filtros (sem uso de Machine Learning).*
+1. **Extração**: identifica ~70 tecnologias/competências na vaga (com sinônimos: `Postgres` → PostgreSQL,
+   `k8s` → Kubernetes) com borda de palavra — `Google` não vira `Go`, `JavaScript` não vira `Java`.
+2. **Compatibilidade (0–100%)**: 55% cobertura técnica (tecnologia no título pesa em dobro; inglês/git
+   pesam pouco) + 45% aderência do cargo aos seus `cargos_alvo`.
+3. **Currículo**: suas habilidades que a vaga pede vão para o início do grupo, em **negrito**; o título
+   ganha as 3 tecnologias centrais que você tem; as conquistas de cada experiência são reordenadas.
+4. **O que falta** aparece só para você, na tela — nunca entra no currículo ou na carta. Há testes
+   automatizados garantindo isso (`tests/test_candidatura.py`).
 
-</div>
+Recrutadores e ATS (Gupy, Sólides, Greenhouse) ranqueiam por palavra-chave: destacar o que você **já
+tem** e a vaga pede é o maior ganho, sem o risco de inventar experiência.
+
+---
+
+## Boas práticas de envio (para não cair em spam)
+
+- Comece com **20–30 e-mails/dia** (o Gmail grátis aceita ~500, mas volume alto queima sua reputação).
+- O sistema espera **60–180 s aleatórios** entre envios e manda **um e-mail por destinatário**.
+- Não repete a mesma empresa/e-mail por **30 dias** (`DIAS_SEM_REPETIR_EMPRESA`).
+- Credencial inválida ou limite do provedor interrompem o lote na hora.
+- Revise as primeiras candidaturas no modo simulação antes de ligar o envio real.
+
+---
+
+## Arquitetura
+
+```text
+job-radar/
+├── candidatar.py            # CLI da candidatura (app, importar, preparar, enviar, auto)
+├── main.py                  # Radar: ciclo de busca por perfil (roda no GitHub Actions)
+├── candidatura/
+│   ├── perfil.py            # Lê config/candidato.yaml
+│   ├── compatibilidade.py   # Extração de tecnologias + score estilo ATS
+│   ├── adaptador.py         # Currículo/carta/e-mail adaptados (sem inventar)
+│   ├── ia.py                # IA opcional: Groq / Gemini / Ollama
+│   ├── contato.py           # Baixa a descrição da vaga e acha e-mails
+│   ├── fontes.py            # GitHub vagas + Remotar
+│   ├── documentos.py        # HTML → PDF (Chromium do Playwright)
+│   ├── envio.py             # SMTP com tratamento de erros
+│   ├── repositorio.py       # Fila em data/candidaturas.db (fora do Git)
+│   ├── servico.py           # Orquestração + limites anti-spam
+│   └── templates/           # Modelos do currículo e da carta
+├── web/                     # Interface Flask (swipe, fila, detalhe, vaga manual)
+├── core/                    # Regras de filtro do radar (cargo, cidade, idioma, score)
+├── scrapers/                # 11 fontes de vagas
+├── database/                # SQLite do radar (data/jobs.db, versionado pelo robô)
+├── notifier/                # Telegram: alertas, digest diário, 👍/👎
+├── config/candidato.example.yaml
+└── tests/                   # 468 testes (CI a cada push)
+```
+
+**Privacidade:** `config/candidato.yaml`, `data/candidaturas.db`, `saida/` e `.env` estão no
+`.gitignore`. O `data/jobs.db` (só vagas públicas) é o único banco versionado, porque o radar roda no
+GitHub Actions.
+
+### Radar no GitHub Actions
+O workflow `.github/workflows/jobradar.yml` roda a cada 3h. Configure os segredos
+`TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` no repositório. Cargos, termos e cidades ficam em
+`core/config.py` (Brasil) e `core/config_intl.py` (internacional).
+
+---
+
+## Inspirações e alternativas pesquisadas
+
+| Projeto | O que faz | Por que não basta |
+|---|---|---|
+| [AIHawk](https://github.com/feder-cr/jobs_applier_ai_agent_aihawk) | Agente que aplica no LinkedIn e gera CV por vaga | Foco em LinkedIn Easy Apply; exige LLM pago/configurado |
+| [ApplyPilot](https://github.com/ibarrajo/ApplyPilot) | Pipeline descoberta → score → CV → carta → auto-apply (usa JobSpy) | Mercado dos EUA; depende de Gemini + Claude Code + Chrome |
+| [python-jobspy](https://pypi.org/project/python-jobspy/) | Scraper multi-site com coluna de e-mails | No Brasil traz e-mail raramente |
+| [LoopCV](https://www.loopcv.pro/pt/) | SaaS que envia candidaturas automaticamente | Plano gratuito limitado |
+| Simplify / Huntr | Extensões que preenchem formulários e organizam a busca | Auto-envio só no plano pago |
+
+O Job Radar junta o que funciona nesses projetos (score, CV por vaga, envio automático) com fontes
+brasileiras, envio por e-mail e custo zero.
+
+---
+
+## Testes
+
+```bash
+pytest tests/ -q
+```
+
+Os testes rodam sem rede, sem navegador e sem SMTP. O CI (`.github/workflows/testes.yml`) executa
+a suíte a cada push.
+
+---
+
+<sub>O radar de vagas (scrapers, filtro, Telegram) nasceu do projeto JobRadar de Liliam Kezia Oliveira
+Souza, adaptado aqui para vagas de desenvolvimento backend e estendido com o módulo de candidatura.</sub>

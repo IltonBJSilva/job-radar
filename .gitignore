@@ -11,3 +11,9 @@ _to_delete/
 
 curriculos_certificados/*
 !curriculos_certificados/.gitkeep
+
+# Dados pessoais do módulo de candidatura (nunca vão para o GitHub)
+config/candidato.yaml
+data/candidaturas.db*
+saida/
+.pytest_cache/

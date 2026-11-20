@@ -234,6 +234,10 @@ def criar_app() -> Flask:
     @app.post("/api/decidir/<id_>")
     def api_decidir(id_):
         acao = (request.get_json(silent=True) or {}).get("acao")
+        if acao in ("curtir", "descartar"):
+            v = repositorio.obter(id_) or abort(404)
+            if v["status"] not in ("nova", "descartada", "curtida", "manual", "pronta", "erro"):
+                return jsonify({"ok": False, "erro": "Essa vaga já foi enviada."}), 400
         if acao == "curtir":
             repositorio.atualizar(id_, status="curtida")
             trabalhador.agendar("Preparando currículo", servico.preparar, id_)

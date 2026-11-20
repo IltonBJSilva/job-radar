@@ -30,6 +30,18 @@ KEYWORDS_CARGO_FORTE = [
     "Desenvolvedor Cloud",
     "Data Engineer",
     "Engenheiro de Dados",
+    # MEDIDO (20/11): sem estes, 111 títulos backend legítimos do jobs.db
+    # passaram a ser rejeitados quando "software"/"sistemas"/"api" saíram
+    # dos qualificadores genéricos.
+    "Software Developer",
+    "Desenvolvedor de Software",
+    "Desenvolvedora de Software",
+    "Desenvolvedor de Sistemas",
+    "Desenvolvedora de Sistemas",
+    "Desenvolvedor de APIs",
+    "API Developer",
+    "Back End",
+    "Software Engineering",
 ]
 
 # Cargo ambíguo: título que também é usado em vaga sem nada a ver com

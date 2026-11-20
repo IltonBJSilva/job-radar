@@ -11,7 +11,9 @@ def _normalizar(texto: str) -> str:
     escrever "Maceio"/"Maceió", "e-commerce"/"ecommerce" etc. de forma
     diferente da nossa lista de keywords/cidades."""
     sem_acento = unicodedata.normalize("NFKD", texto.lower())
-    return "".join(c for c in sem_acento if not unicodedata.combining(c))
+    saida = "".join(c for c in sem_acento if not unicodedata.combining(c))
+    # Linguagem neutra: "Engenheiro(a) de Software" tem que bater "Engenheiro de Software".
+    return re.sub(r"\((?:a|o|as|os|e)\)", "", saida)
 
 
 def _contem_termo(termo: str, texto: str, aceitar_plural: bool = False) -> bool:

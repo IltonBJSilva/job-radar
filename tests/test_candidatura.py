@@ -390,7 +390,8 @@ def test_web_bloqueia_post_de_outro_site(banco, monkeypatch, tmp_path):
     assert c.post("/api/enviar-lote", json={}).status_code == 403  # sem Origin/Referer
     assert c.post("/vaga/x", data={"email_destino": "hacker@mal.com"},
                   headers={"Origin": "https://malicioso.com"}).status_code == 403
-    ok = c.post("/api/decidir/inexistente", json={"acao": "descartar"}, headers={"Origin": "http://localhost"})
+    repositorio.inserir({"id": "z1", "titulo": "Dev"})
+    ok = c.post("/api/decidir/z1", json={"acao": "descartar"}, headers={"Origin": "http://localhost"})
     assert ok.status_code == 200
     assert link_seguro("javascript:alert(1)") == "" and link_seguro("https://x.com") == "https://x.com"
 
@@ -651,3 +652,71 @@ def test_gupy_item_vira_vaga_e_prazo_vencido_e_ignorado():
     v = gupy_para_vaga({**base, "applicationDeadline": "2099-01-01T00:00:00.000Z"})
     assert v["modalidade"] == "Remoto" and v["site"] == "Gupy" and "Django" in v["descricao"]
     assert gupy_para_vaga({**base, "applicationDeadline": "2020-01-01T00:00:00.000Z"}) is None
+
+
+# ------------------------------------ regressões: revisão das correções
+
+def test_perfil_quebrado_nao_deixa_vaga_presa_em_enviando(banco, monkeypatch):
+    from candidatura.perfil import PerfilNaoEncontrado
+
+    def falha():
+        raise PerfilNaoEncontrado("sem perfil")
+
+    monkeypatch.setattr(servico, "carregar_candidato", falha)
+    id_ = _vaga_pronta(banco)
+    with pytest.raises(PerfilNaoEncontrado):
+        servico.enviar(id_, real=False)
+    assert repositorio.obter(id_)["status"] == "pronta"
+
+
+def test_reserva_respeita_limite_e_repeticao_na_mesma_transacao(banco):
+    _vaga_pronta(banco, "a", "rh@acme.com", "ACME")
+    _vaga_pronta(banco, "b", "outro@acme.com", "ACME")
+    assert repositorio.reservar_para_envio("a", True, "rh@acme.com", "ACME", 30, 5) is None
+    # 'a' está enviando: 'b' (mesma empresa) é recusada até em outro processo.
+    assert "já enviado" in repositorio.reservar_para_envio("b", True, "outro@acme.com", "ACME", 30, 5)
+
+
+def test_enviando_recente_nao_e_liberado(banco):
+    _vaga_pronta(banco, "a")
+    repositorio.reservar_para_envio("a", False)
+    assert repositorio.liberar_envios_interrompidos(minutos=15) == 0
+    assert repositorio.obter("a")["status"] == "enviando"
+
+
+@pytest.mark.parametrize("titulo", ["Desenvolvedor de Software", "Software Developer", "Engenheiro(a) de Software Sênior",
+                                    "Desenvolvedor(a) Backend", "Senior API Developer", "Desenvolvedor de Sistemas"])
+def test_titulos_backend_legitimos_continuam_aprovados(titulo):
+    from core.job import Job
+    from core.perfis import PERFIL_BR
+
+    job = Job(titulo=titulo, empresa="E", local="Remoto", link=f"https://x/{titulo}", site="T", modalidade="Remoto")
+    assert job.combina_com(PERFIL_BR.regras)
+
+
+def test_dedup_nao_junta_senioridades_nem_empresa_confidencial(banco):
+    repositorio.inserir({"id": "p", "titulo": "Dev Python (Pleno)", "empresa": "ACME"})
+    repositorio.inserir({"id": "c", "titulo": "Desenvolvedor Python", "empresa": "Confidencial"})
+    assert not repositorio.existe_semelhante("Dev Python (Sênior)", None, "ACME")
+    assert not repositorio.existe_semelhante("Desenvolvedor Python", None, "Confidencial")
+    assert repositorio.existe_semelhante("Dev Python (Pleno)", None, "ACME")
+
+
+def test_imap_ignora_newsletter_mensagem_antiga_e_email_parecido():
+    from candidatura.acompanhamento import classificar_mensagem
+
+    vagas = [{"id": "v", "email_destino": "rh@empresa.com", "message_id": "<m@x>", "enviada_em": "2026-11-10T10:00:00"}]
+    news = classificar_mensagem("rh@empresa.com", "Novidades", "Clique para unsubscribe", {"Date": "Wed, 12 Nov 2026 10:00:00 -0300"}, vagas)
+    antiga = classificar_mensagem("rh@empresa.com", "Oi", "", {"Date": "Wed, 05 Nov 2026 10:00:00 -0300"}, vagas)
+    bounce = classificar_mensagem("mailer-daemon@g.com", "Undeliverable", "não entregue para xrh@empresa.com", {}, vagas)
+    certo = classificar_mensagem("Ana <rh@empresa.com>", "Re: Candidatura", "", {"Date": "Wed, 12 Nov 2026 10:00:00 -0300"}, vagas)
+    assert news == [] and antiga == [] and bounce == []
+    assert certo == [("v", "resposta", "Re: Candidatura")]
+
+
+def test_titulo_so_com_tag_e_siglas_no_texto(candidato):
+    from candidatura.adaptador import _minuscula_inicial, titulo_curto
+
+    assert titulo_curto("[Remoto]") == "[Remoto]"
+    assert _minuscula_inicial("API REST em Go.") == "API REST em Go"
+    assert _minuscula_inicial("Desenvolvi APIs.") == "desenvolvi APIs"

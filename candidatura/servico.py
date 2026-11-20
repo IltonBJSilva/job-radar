@@ -115,7 +115,8 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
         # E-mail editado por você durante o preparo vence o encontrado.
         if agora.get("email_destino") and agora.get("email_destino") != vaga.get("email_destino"):
             destino = agora["email_destino"]
-            status = "pronta" if status in ("pronta", "manual") and email_valido(destino) else status
+            if not aviso:
+                status = "pronta" if status in ("pronta", "manual") and email_valido(destino) else status
         repositorio.atualizar(
             id_,
             descricao=descricao,
@@ -179,22 +180,26 @@ def enviar(id_: str, real: bool | None = None, candidato: Candidato | None = Non
     vaga = repositorio.obter(id_)
     if not vaga:
         raise KeyError(id_)
+    # Tudo que pode falhar ANTES da reserva — nada fica preso em 'enviando'.
+    candidato = candidato or carregar_candidato()
     with _TRAVA_ENVIO:
         vaga = repositorio.obter(id_)
         bloqueio = motivo_bloqueio(vaga, real)
         if bloqueio:
             raise ErroEnvio(bloqueio)
-        if not repositorio.reservar_para_envio(id_, real):
-            raise ErroEnvio("outra ação já está enviando esta vaga")
+        recusa = repositorio.reservar_para_envio(
+            id_, real, vaga.get("email_destino") or "", vaga.get("empresa") or "",
+            config.DIAS_SEM_REPETIR_EMPRESA, config.LIMITE_DIARIO,
+        )
+        if recusa:
+            raise ErroEnvio(recusa)
 
-    if real and vaga_encerrada(vaga):
-        repositorio.atualizar(id_, status="encerrada", erro="A vaga foi fechada antes do envio.")
-        raise ErroEnvio("vaga encerrada (issue fechada no GitHub)")
-
-    candidato = candidato or carregar_candidato()
     remetente = config.SMTP_USUARIO or candidato.email
     anexos = [p for p in (vaga.get("cv_path"), vaga.get("carta_path")) if p]
     try:
+        if real and vaga_encerrada(vaga):
+            repositorio.atualizar(id_, status="encerrada", erro="A vaga foi fechada antes do envio.")
+            raise VagaEncerrada("vaga encerrada (issue fechada no GitHub)")
         msg = montar_mensagem(candidato.nome, remetente, vaga["email_destino"], vaga["assunto"] or "",
                               vaga["corpo"] or "", anexos, responder_para=candidato.email)
         if real:
@@ -203,19 +208,27 @@ def enviar(id_: str, real: bool | None = None, candidato: Candidato | None = Non
             from pathlib import Path
 
             salvar_eml(msg, Path(vaga["cv_path"]).parent)
+    except VagaEncerrada:
+        raise
     except ErroEnvio as e:
         dica = " (pode ter saído antes da queda — confira sua caixa de Enviados antes de reenviar)" \
             if isinstance(e, ErroConexao) else ""
         repositorio.atualizar(id_, status="erro", erro=f"envio: {e}{dica}")
         raise
-    except Exception as e:
-        repositorio.atualizar(id_, status="erro", erro=f"envio: {e}")
-        raise ErroEnvio(str(e)) from e
+    except BaseException as e:  # inclui Ctrl+C: a vaga nunca fica presa em 'enviando'
+        repositorio.atualizar(id_, status="erro", erro=f"envio: {e!r}")
+        if isinstance(e, Exception):
+            raise ErroEnvio(str(e)) from e
+        raise
 
     repositorio.atualizar(id_, status="enviada", simulado=0 if real else 1, message_id=msg["Message-ID"],
                           enviada_em=datetime.now().isoformat(timespec="seconds"), erro=None)
     logger.info(f"[Candidatura] {'ENVIADA' if real else 'Simulada'}: {vaga['titulo']} -> {vaga['email_destino']}")
     return repositorio.obter(id_)
+
+
+class VagaEncerrada(ErroEnvio):
+    pass
 
 
 def vaga_encerrada(vaga: dict) -> bool:

@@ -125,18 +125,35 @@ def classificar_mensagem(remetente: str, assunto: str, corpo: str, cabecalhos: d
 
     Devolve [(id_vaga, tipo, resumo)] com tipo 'resposta' ou 'bounce'.
     Função pura — testável sem servidor IMAP."""
+    import re
+    from email.utils import parseaddr, parsedate_to_datetime
+
     remetente_l = (remetente or "").lower()
+    endereco = parseaddr(remetente or "")[1].lower()
     referencias = f"{cabecalhos.get('In-Reply-To', '')} {cabecalhos.get('References', '')}"
+    corpo_l = (corpo or "").lower()
     eh_bounce = any(t in remetente_l for t in ("mailer-daemon", "postmaster")) or \
         any(t in (assunto or "").lower() for t in ("delivery status notification", "undeliverable", "não entregue", "falha na entrega"))
+    eh_massa = any(t in corpo_l for t in ("unsubscribe", "descadastr", "cancelar inscri", "newsletter"))
+    data_msg = None
+    try:
+        if cabecalhos.get("Date"):
+            data_msg = parsedate_to_datetime(cabecalhos["Date"]).astimezone().replace(tzinfo=None)
+    except (TypeError, ValueError):
+        pass
     achados = []
     for v in vagas:
         destino = (v.get("email_destino") or "").lower()
         mid = v.get("message_id") or ""
+        enviada = v.get("enviada_em") or ""
+        if data_msg and enviada and data_msg.isoformat() < enviada:
+            continue  # mensagem anterior à candidatura não é resposta a ela
         if eh_bounce:
-            if destino and destino in (corpo or "").lower():
+            if destino and re.search(r"(?<![\w.+-])" + re.escape(destino) + r"(?![\w-]|\.\w)", corpo_l):
                 achados.append((v["id"], "bounce", f"E-mail não entregue para {destino}"))
-        elif (mid and mid in referencias) or (destino and destino in remetente_l):
+        elif mid and mid in referencias:
+            achados.append((v["id"], "resposta", (assunto or "")[:200]))  # mesmo fio: certeza
+        elif destino and endereco == destino and not eh_massa:
             achados.append((v["id"], "resposta", (assunto or "")[:200]))
     return achados
 
@@ -156,16 +173,24 @@ def verificar_respostas(dias: int = 45) -> dict:
         _, dados = imap.search(None, f'(SINCE "{desde}")')
         ids = (dados[0] or b"").split()[-1500:]
         for num in ids:
-            _, bruto = imap.fetch(num, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT IN-REPLY-TO REFERENCES)] BODY.PEEK[TEXT]<0.4000>)")
-            pedacos = [p[1] for p in bruto if isinstance(p, tuple)]
-            if not pedacos:
+            _, bruto = imap.fetch(num, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE IN-REPLY-TO REFERENCES)] BODY.PEEK[TEXT]<0.4000>)")
+            # A ordem das partes na resposta não é garantida: identifica pelo descritor.
+            cab_bytes, corpo_bytes = b"", b""
+            for parte in bruto:
+                if isinstance(parte, tuple):
+                    if b"HEADER" in parte[0].upper():
+                        cab_bytes = parte[1]
+                    else:
+                        corpo_bytes = parte[1]
+            if not cab_bytes:
                 continue
-            cab = email.message_from_bytes(pedacos[0])
-            corpo = pedacos[1].decode("utf-8", "replace") if len(pedacos) > 1 else ""
+            cab = email.message_from_bytes(cab_bytes)
+            corpo = corpo_bytes.decode("utf-8", "replace")
             resultado["lidas"] += 1
             for id_, tipo, resumo in classificar_mensagem(
                 _decodificar(cab.get("From")), _decodificar(cab.get("Subject")), corpo,
-                {"In-Reply-To": cab.get("In-Reply-To", ""), "References": cab.get("References", "")}, vagas,
+                {"In-Reply-To": cab.get("In-Reply-To", ""), "References": cab.get("References", ""),
+                 "Date": cab.get("Date", "")}, vagas,
             ):
                 atual = repositorio.obter(id_)
                 if not atual or atual["status"] != "enviada":

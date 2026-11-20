@@ -171,9 +171,14 @@ def contagem_por_status() -> dict[str, int]:
 
 def enviadas_hoje(incluir_simuladas: bool = False) -> int:
     """E-mails que saíram hoje: candidaturas + follow-ups (o limite diário vale para o total)."""
+    with conectar() as conn:
+        return _enviadas_hoje(conn, incluir_simuladas)
+
+
+def _enviadas_hoje(conn, incluir_simuladas: bool = False) -> int:
     hoje = datetime.now().date().isoformat()
     filtro_sim = "" if incluir_simuladas else " AND simulado = 0"
-    with conectar() as conn:
+    if True:
         envios = conn.execute(
             f"SELECT COUNT(*) FROM candidaturas WHERE substr(enviada_em, 1, 10) = ?{filtro_sim}", (hoje,)
         ).fetchone()[0]
@@ -190,10 +195,15 @@ EMPRESAS_GENERICAS = {"", "confidencial", "empresa confidencial", "nao informado
 def ja_contatado(email: str, empresa: str, dias: int, ignorar_id: str = "") -> bool:
     """True se já enviamos (de verdade) para este e-mail ou empresa na janela.
     Empresa genérica ("Confidencial") só bloqueia pelo e-mail."""
+    with conectar() as conn:
+        return _ja_contatado(conn, email, empresa, dias, ignorar_id)
+
+
+def _ja_contatado(conn, email: str, empresa: str, dias: int, ignorar_id: str = "") -> bool:
     if (empresa or "").strip().lower() in EMPRESAS_GENERICAS:
         empresa = ""
     limite = (datetime.now() - timedelta(days=dias)).isoformat(timespec="seconds")
-    with conectar() as conn:
+    if True:
         linha = conn.execute(
             """
             SELECT 1 FROM candidaturas
@@ -207,25 +217,46 @@ def ja_contatado(email: str, empresa: str, dias: int, ignorar_id: str = "") -> b
     return linha is not None
 
 
-def reservar_para_envio(id_: str, real: bool) -> bool:
-    """Troca o status para 'enviando' de forma ATÔMICA. Dois cliques (ou o
-    botão + o lote) na mesma vaga: só um consegue a reserva, só um e-mail sai.
-    Envio real também aceita vaga que só foi simulada antes."""
+def reservar_para_envio(id_: str, real: bool, email: str = "", empresa: str = "",
+                        dias: int = 30, limite_diario: int | None = None) -> str | None:
+    """Reserva a vaga ('enviando') de forma ATÔMICA e devolve None, ou o motivo
+    da recusa. Checagem de limite diário/repetição e reserva acontecem na MESMA
+    transação com lock de escrita (BEGIN IMMEDIATE): vale entre threads E entre
+    processos (interface web + `auto` agendado ao mesmo tempo)."""
     condicao = "status = 'pronta'" + (" OR (status = 'enviada' AND simulado = 1)" if real else "")
     with conectar() as conn:
-        cur = conn.execute(
-            f"UPDATE candidaturas SET status = 'enviando', atualizada_em = ? WHERE id = ? AND ({condicao})",
-            (datetime.now().isoformat(timespec="seconds"), id_),
-        )
-        return cur.rowcount == 1
+        conn.isolation_level = None
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if real and limite_diario is not None and _enviadas_hoje(conn) >= limite_diario:
+                conn.execute("ROLLBACK")
+                return f"limite diário atingido ({limite_diario})"
+            if real and _ja_contatado(conn, email, empresa, dias, id_):
+                conn.execute("ROLLBACK")
+                return f"já enviado para este e-mail/empresa nos últimos {dias} dias"
+            cur = conn.execute(
+                f"UPDATE candidaturas SET status = 'enviando', atualizada_em = ? WHERE id = ? AND ({condicao})",
+                (datetime.now().isoformat(timespec="seconds"), id_),
+            )
+            if cur.rowcount != 1:
+                conn.execute("ROLLBACK")
+                return "outra ação já está enviando esta vaga"
+            conn.execute("COMMIT")
+            return None
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
 
 
-def liberar_envios_interrompidos() -> int:
-    """'enviando' que sobrou de um app fechado no meio do envio."""
+def liberar_envios_interrompidos(minutos: int = 15) -> int:
+    """'enviando' parado há mais de N minutos = processo que morreu no meio.
+    (Recente pode ser um envio de verdade rodando em outro processo.)"""
+    limite = (datetime.now() - timedelta(minutes=minutos)).isoformat(timespec="seconds")
     with conectar() as conn:
         cur = conn.execute(
             "UPDATE candidaturas SET status = 'erro', erro = 'Envio interrompido — confira sua caixa de "
-            "Enviados antes de refazer.' WHERE status = 'enviando'"
+            "Enviados antes de refazer.' WHERE status = 'enviando' AND atualizada_em < ?",
+            (limite,),
         )
         return cur.rowcount
 
@@ -235,7 +266,7 @@ def normalizar_titulo(titulo: str) -> str:
     import unicodedata
 
     t = unicodedata.normalize("NFKD", titulo or "").encode("ascii", "ignore").decode().lower()
-    t = re.sub(r"[\(\[].*?[\)\]]", " ", t)
+    t = re.sub(r"\[.*?\]", " ", t)  # [Remoto] sai; (Pleno)/(Sênior) fica — são vagas diferentes
     return " ".join(re.findall(r"[a-z0-9]+", t))
 
 
@@ -245,6 +276,8 @@ def existe_semelhante(titulo: str, email: str | None, empresa: str | None) -> bo
     alvo = normalizar_titulo(titulo)
     if not alvo:
         return False
+    if (empresa or "").strip().lower() in EMPRESAS_GENERICAS:
+        empresa = ""
     with conectar() as conn:
         linhas = conn.execute(
             "SELECT titulo FROM candidaturas WHERE (? != '' AND lower(email_destino) = lower(?)) "

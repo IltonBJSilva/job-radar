@@ -122,6 +122,8 @@ def _lista_humana(itens: list[str]) -> str:
 
 def _minuscula_inicial(texto: str) -> str:
     texto = (texto or "").strip().rstrip(".")
+    if len(texto) > 1 and texto[1].isupper():  # sigla: "API REST", "AWS"
+        return texto
     return texto[:1].lower() + texto[1:] if texto else ""
 
 
@@ -143,6 +145,8 @@ def titulo_curto(titulo: str, maximo: int = 60) -> str:
     t = re.sub(r"\s*[\(\[].*?[\)\]]", "", titulo or "")
     t = re.split(r"\s+[-|/]\s+(?=(home office|remot|hybrid|h[ií]brido|ref|presencial))", t, flags=re.I)[0]
     t = " ".join(t.split()).strip(" -|/")
+    if not t:  # título era só "[Remoto]" ou "(PJ)": melhor o original que vazio
+        t = " ".join((titulo or "vaga").split())
     return t if len(t) <= maximo else t[:maximo].rsplit(" ", 1)[0]
 
 

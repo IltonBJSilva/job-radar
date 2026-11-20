@@ -308,7 +308,8 @@ def importar_do_radar(limite: int = 2000, radar_db: str | None = None) -> int:
                 SELECT v.id, v.titulo, v.empresa, v.local, v.modalidade, v.link, v.site,
                        'radar', v.publicado_em, COALESCE({desc}, '')
                 FROM radar.vagas_vistas v
-                WHERE NOT EXISTS (SELECT 1 FROM candidaturas c WHERE c.id = v.id)
+                WHERE NOT EXISTS (SELECT 1 FROM candidaturas c WHERE c.id = v.id OR (v.link != '' AND c.link = v.link))
+                  AND v.rowid = (SELECT MIN(v2.rowid) FROM radar.vagas_vistas v2 WHERE v2.link = v.link)
                   {"AND COALESCE(v.feedback, '') != 'negativo'" if "feedback" in colunas else ""}
                 ORDER BY v.encontrada_em DESC
                 LIMIT ?

@@ -164,6 +164,8 @@ def cmd_followup(args):
             print("Por segurança, follow-up real só roda depois de checar respostas. Abortando.")
             sys.exit(1)
     r = acompanhamento.enviar_followups(limite=args.limite, real=real, dias=args.dias)
+    if not r["enviados"] and not r["erros"]:
+        print(f"Nenhuma candidatura REAL enviada há {args.dias}+ dias sem resposta (envios simulados não recebem follow-up).")
     print(f"{r['enviados']} follow-up(s) {'enviado(s)' if real else 'simulado(s)'}; erros: {r['erros']}")
 
 
@@ -177,19 +179,22 @@ def cmd_agendar(args):
     if not os.path.exists(python):
         python = sys.executable
     script = os.path.join(raiz, "rodar_diario.cmd")
-    with open(script, "w", encoding="utf-8") as f:
-        f.write(
-            "@echo off\r\n"
-            f'cd /d "{raiz}"\r\n'
-            f'"{python}" candidatar.py importar --enriquecer 40\r\n'
-            + (f'"{python}" candidatar.py respostas\r\n' if config.SMTP_SENHA else "")
-            + (f'"{python}" candidatar.py auto --limite {args.limite}\r\n' if args.auto else "")
-        )
+    conteudo = (
+        "@echo off\r\n"
+        f'cd /d "{raiz}"\r\n'
+        f'"{python}" candidatar.py importar --enriquecer 40\r\n'
+        + (f'"{python}" candidatar.py respostas\r\n' if config.SMTP_SENHA else "")
+        + (f'"{python}" candidatar.py auto --limite {args.limite}\r\n' if args.auto else "")
+        + (f'"{python}" candidatar.py followup --limite 5\r\n' if args.auto and config.SMTP_SENHA else "")
+    )
     comando = ["schtasks", "/Create", "/F", "/SC", "DAILY", "/ST", args.hora, "/TN", "JobRadarCandidaturas",
                "/TR", f'"{script}"']
-    print("Criando tarefa:", " ".join(comando))
     if args.mostrar:
+        print(f"Conteúdo de {script}:\n{conteudo}\nComando: {' '.join(comando)}\n(nada foi criado)")
         return
+    with open(script, "w", encoding="utf-8") as f:
+        f.write(conteudo)
+    print("Criando tarefa:", " ".join(comando))
     subprocess.run(comando, check=True)
     print(f"Pronto: todo dia às {args.hora} o Windows roda {script}. Remover: schtasks /Delete /TN JobRadarCandidaturas /F")
 
@@ -209,35 +214,36 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="Candidatura automática com currículo adaptado por vaga.")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("iniciar").set_defaults(f=cmd_iniciar)
+    sub.add_parser("iniciar", help="cria config/candidato.yaml a partir do exemplo").set_defaults(f=cmd_iniciar)
 
-    a = sub.add_parser("app")
+    a = sub.add_parser("app", help="abre a interface (swipe) no navegador")
     a.add_argument("--porta", type=int, default=5000)
     a.add_argument("--sem-navegador", action="store_true")
     a.set_defaults(f=cmd_app)
 
-    a = sub.add_parser("importar")
+    a = sub.add_parser("importar", help="busca vagas (radar, GitHub, Remotar, Gupy) e calcula a compatibilidade")
     a.add_argument("--sem-github", action="store_true")
     a.add_argument("--sem-remotar", action="store_true")
     a.add_argument("--enriquecer", type=int, default=0, metavar="N", help="baixa a descrição de até N vagas para achar e-mail")
     a.set_defaults(f=cmd_importar)
 
-    a = sub.add_parser("listar")
-    a.add_argument("--top", type=int, default=20)
-    a.add_argument("--status", default="nova")
+    a = sub.add_parser("listar", help="mostra as vagas mais compatíveis")
+    a.add_argument("--top", type=int, default=20, help="quantas mostrar")
+    a.add_argument("--status", default="nova", help="nova, pronta, manual, enviada, respondida, erro...")
     a.set_defaults(f=cmd_listar)
 
-    a = sub.add_parser("preparar")
-    a.add_argument("--top", type=int, default=10)
-    a.add_argument("--score-min", type=int, default=0)
-    a.add_argument("--incluir-sem-email", action="store_true")
-    a.add_argument("--id", nargs="*")
-    a.add_argument("--sem-ia", action="store_true")
+    a = sub.add_parser("preparar", help="gera CV + carta adaptados (não envia)")
+    a.add_argument("--top", type=int, default=10, help="quantas vagas preparar")
+    a.add_argument("--score-min", type=int, default=0, help="compatibilidade mínima (0-100)")
+    a.add_argument("--incluir-sem-email", action="store_true", help="prepara também vagas sem e-mail")
+    a.add_argument("--id", nargs="*", help="ids específicos (veja na interface)")
+    a.add_argument("--sem-ia", action="store_true", help="não usa IA mesmo se configurada")
     a.set_defaults(f=cmd_preparar)
 
     for nome, func in (("enviar", cmd_enviar), ("auto", cmd_auto)):
-        a = sub.add_parser(nome)
-        a.add_argument("--limite", type=int, default=10)
+        a = sub.add_parser(nome, help="envia as candidaturas prontas" if nome == "enviar"
+                           else "importa, escolhe as melhores com e-mail, prepara e envia")
+        a.add_argument("--limite", type=int, default=10, help="máximo de e-mails nesta execução")
         a.add_argument("--real", action="store_true", help="envia de verdade (pede confirmação)")
         a.add_argument("--sem-confirmar", action="store_true", help="com --real: não pedir confirmação (para agendador)")
         if nome == "enviar":
@@ -247,36 +253,35 @@ def main(argv=None):
             a.add_argument("--sem-ia", action="store_true")
         a.set_defaults(f=func)
 
-    a = sub.add_parser("respostas")
-    a.add_argument("--dias", type=int, default=45)
+    a = sub.add_parser("respostas", help="lê o Gmail (IMAP) e marca respondidas e e-mails que voltaram")
+    a.add_argument("--dias", type=int, default=45, help="quantos dias da caixa de entrada ler")
     a.set_defaults(f=cmd_respostas)
 
-    a = sub.add_parser("followup")
+    a = sub.add_parser("followup", help="1 follow-up educado após N dias sem resposta (só envios reais)")
     a.add_argument("--limite", type=int, default=10)
     a.add_argument("--dias", type=int, default=7, help="dias sem resposta antes do follow-up")
     a.add_argument("--real", action="store_true")
     a.add_argument("--sem-confirmar", action="store_true")
     a.set_defaults(f=cmd_followup)
 
-    a = sub.add_parser("agendar")
+    a = sub.add_parser("agendar", help="cria tarefa diária no Agendador de Tarefas do Windows")
     a.add_argument("--hora", default="09:00")
     a.add_argument("--auto", action="store_true", help="além de buscar, também envia (modo auto) todo dia")
     a.add_argument("--limite", type=int, default=10)
     a.add_argument("--mostrar", action="store_true", help="só mostra o comando, não cria a tarefa")
     a.set_defaults(f=cmd_agendar)
 
-    sub.add_parser("status").set_defaults(f=cmd_status)
+    sub.add_parser("status", help="resumo da fila e da configuração").set_defaults(f=cmd_status)
 
     args = p.parse_args(argv)
+    from candidatura.perfil import PerfilInvalido, PerfilNaoEncontrado
+
     try:
         args.f(args)
-    except Exception as e:
-        from candidatura.perfil import PerfilNaoEncontrado
-
-        if isinstance(e, PerfilNaoEncontrado):
-            print(e)
-            sys.exit(2)
-        raise
+    except (PerfilNaoEncontrado, PerfilInvalido, RuntimeError, ValueError) as e:
+        # Erro esperado (configuração faltando etc.): mensagem clara, sem traceback.
+        print(f"Erro: {e}")
+        sys.exit(2)
 
 
 if __name__ == "__main__":

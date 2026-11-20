@@ -720,3 +720,66 @@ def test_titulo_so_com_tag_e_siglas_no_texto(candidato):
     assert titulo_curto("[Remoto]") == "[Remoto]"
     assert _minuscula_inicial("API REST em Go.") == "API REST em Go"
     assert _minuscula_inicial("Desenvolvi APIs.") == "desenvolvi APIs"
+
+
+# ------------------------------------------------- regressões: QA final
+
+def test_auto_sem_vagas_qualificadas_nao_quebra(banco, monkeypatch):
+    monkeypatch.setattr(servico, "importar_tudo", lambda **k: {"radar": 0})
+    monkeypatch.setattr(servico, "enriquecer", lambda **k: 0)
+    r = servico.auto(limite=3, real=False, usar_ia=False)
+    assert r["selecionadas"] == 0 and r["envio"]["enviadas"] == 0
+
+
+def test_cli_erro_esperado_sem_traceback(capsys, monkeypatch):
+    import candidatar
+
+    monkeypatch.setattr(config, "SMTP_USUARIO", "")
+    with pytest.raises(SystemExit) as saida:
+        candidatar.main(["respostas"])
+    assert saida.value.code == 2 and "Configure SMTP_USUARIO" in capsys.readouterr().out
+
+
+def test_agendar_mostrar_nao_cria_nada(capsys):
+    import os
+
+    import candidatar
+
+    raiz = os.path.dirname(os.path.abspath(candidatar.__file__))
+    candidatar.main(["agendar", "--mostrar", "--auto"])
+    assert "nada foi criado" in capsys.readouterr().out
+    assert not os.path.exists(os.path.join(raiz, "rodar_diario.cmd"))
+
+
+def test_carta_so_diz_atualmente_com_emprego_atual():
+    passado = candidato_de_dict(dict(PERFIL, experiencias=[
+        {"cargo": "Dev", "empresa": "ACME", "periodo": "2021 – 2023", "tecnologias": ["Python"], "conquistas": ["Fiz APIs."]}]))
+    atual = candidato_de_dict(dict(PERFIL, experiencias=[
+        {"cargo": "Dev", "empresa": "ACME", "periodo": "2024 – atual", "tecnologias": ["Python"], "conquistas": ["Fiz APIs."]}]))
+    vaga = {"titulo": "Dev Python", "empresa": "X", "descricao": "Python"}
+    assert "atualmente" not in montar_pacote(passado, vaga, analisar(passado, "Dev Python", "Python"), usar_ia=False).carta
+    assert "atualmente" in montar_pacote(atual, vaga, analisar(atual, "Dev Python", "Python"), usar_ia=False).carta
+
+
+def test_titulo_cortado_sem_pontuacao_solta():
+    from candidatura.adaptador import titulo_curto
+
+    t = titulo_curto("Desenvolvedor(a) Back-end Júnior - Python / AI Coding & Agentic AI Platform Team", maximo=50)
+    assert not t.endswith(("&", "/", "-"))
+
+
+def test_eml_tem_data(tmp_path):
+    msg = montar_mensagem("Ana", "a@x.com", "rh@x.com", "A", "B", [])
+    assert msg["Date"]
+
+
+def test_importar_radar_nao_duplica_mesmo_link(banco, tmp_path):
+    import sqlite3
+
+    radar = tmp_path / "jobs2.db"
+    with sqlite3.connect(radar) as c:
+        c.execute("CREATE TABLE vagas_vistas (id TEXT PRIMARY KEY, titulo TEXT, empresa TEXT, local TEXT, link TEXT,"
+                  " site TEXT, encontrada_em TEXT, publicado_em TEXT, modalidade TEXT)")
+        c.execute("INSERT INTO vagas_vistas VALUES ('a','Dev','E','L','https://mesmo','S','2026-01-01','','')")
+        c.execute("INSERT INTO vagas_vistas VALUES ('b','Dev','E','L','https://mesmo','S','2026-01-02','','')")
+    assert repositorio.importar_do_radar(radar_db=str(radar)) == 1

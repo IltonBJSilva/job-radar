@@ -117,7 +117,9 @@ def coletar_github(repos: list[str] | None = None, por_repo: int = 100) -> int:
         try:
             r = requests.get(url, headers=cabecalhos, timeout=20)
             if r.status_code != 200:
-                logger.warning(f"[GitHub] {repo}: HTTP {r.status_code} {r.text[:120]}")
+                motivo = "limite de 60 req/h atingido (defina GITHUB_TOKEN no .env)" if r.status_code in (403, 429) \
+                    else r.text[:120]
+                logger.warning(f"[GitHub] {repo}: HTTP {r.status_code} — {motivo}")
                 continue
             for issue in r.json():
                 vaga = issue_para_vaga(issue, repo)

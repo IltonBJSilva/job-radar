@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from email.header import decode_header, make_header
 
 from candidatura import config, repositorio
+from candidatura.adaptador import titulo_curto
 from candidatura.envio import ErroEnvio, ErroFatalSMTP, enviar_smtp, montar_mensagem, salvar_eml
 from candidatura.perfil import Candidato, carregar_candidato
 from core.logger import get_logger
@@ -37,7 +38,7 @@ def texto_followup(candidato: Candidato, vaga: dict) -> str:
     data = "/".join(reversed((vaga.get("enviada_em") or "")[:10].split("-"))) if vaga.get("enviada_em") else ""
     return (
         "Olá, tudo bem?\n\n"
-        f"Escrevo para reforçar meu interesse na vaga de {vaga['titulo']}, para a qual enviei meu currículo"
+        f"Escrevo para reforçar meu interesse na vaga de {titulo_curto(vaga['titulo'])}, para a qual enviei meu currículo"
         + (f" em {data}" if data else "") + ". "
         f"Sigo disponível para conversar e mostrar como posso contribuir com {empresa}.\n\n"
         "Se a vaga já tiver sido preenchida, agradeço o retorno e não enviarei novas mensagens.\n\n"

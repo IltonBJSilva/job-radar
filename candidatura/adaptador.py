@@ -147,14 +147,28 @@ def titulo_curto(titulo: str, maximo: int = 60) -> str:
     t = " ".join(t.split()).strip(" -|/")
     if not t:  # título era só "[Remoto]" ou "(PJ)": melhor o original que vazio
         t = " ".join((titulo or "vaga").split())
-    return t if len(t) <= maximo else t[:maximo].rsplit(" ", 1)[0]
+    if len(t) > maximo:
+        t = t[:maximo].rsplit(" ", 1)[0]
+    return t.rstrip(" -|/&,+:;")
 
 
 def _recentes(candidato: Candidato) -> set[str]:
-    """Tecnologias das 2 experiências mais recentes (ou de todas as
-    habilidades, se você não listou tecnologias por experiência)."""
-    techs = [t for e in candidato.experiencias[:2] for t in e.tecnologias]
+    """Tecnologias da experiência mais recente (a primeira do perfil), ou
+    todas as habilidades se você não listou tecnologias por experiência."""
+    techs = candidato.experiencias[0].tecnologias if candidato.experiencias else []
     return {t.lower() for t in techs} if techs else {h.lower() for h in candidato.todas_habilidades}
+
+
+def _emprego_atual(candidato: Candidato) -> bool:
+    """Só dizemos "trabalho atualmente" se o período da 1ª experiência indica isso."""
+    import re
+
+    periodo = (candidato.experiencias[0].periodo if candidato.experiencias else "").lower()
+    return bool(re.search(r"atual|presente|hoje|current|now|\batual\b", periodo))
+
+
+def _verbo_tecnologias(candidato: Candidato) -> str:
+    return "trabalho atualmente com" if _emprego_atual(candidato) else "tenho experiência recente com"
 
 
 def _carta_padrao(candidato: Candidato, analise: Analise, declaradas: list[str], titulo: str, empresa: str) -> str:
@@ -167,7 +181,7 @@ def _carta_padrao(candidato: Candidato, analise: Analise, declaradas: list[str],
 
     p1 = f"Gostaria de me candidatar à vaga de {titulo_txt}" + (f" ({empresa_txt})" if empresa_txt else "") + "."
     if papel:
-        p1 += f" Sou {papel[0].lower() + papel[1:]}" + (f" e trabalho atualmente com {_lista_humana(atuais)}." if atuais else ".")
+        p1 += f" Sou {papel[0].lower() + papel[1:]}" + (f" e {_verbo_tecnologias(candidato)} {_lista_humana(atuais)}." if atuais else ".")
 
     evidencias = []
     for e in candidato.experiencias[:2]:
@@ -210,7 +224,7 @@ def _corpo_email(candidato: Candidato, titulo: str, empresa: str, declaradas: li
         "",
         f"Gostaria de me candidatar à vaga de {titulo_curto(titulo)}" + (f" ({empresa_txt})" if empresa_txt else "") + ". "
         + (f"Sou {papel[0].lower() + papel[1:]}" if papel else "Tenho experiência em desenvolvimento")
-        + (f", com experiência atual em {_lista_humana(atuais)}." if atuais else ".")
+        + (f" e {_verbo_tecnologias(candidato)} {_lista_humana(atuais)}." if atuais else ".")
         + destaque,
         "",
         "Envio em anexo meu currículo e uma carta de apresentação. Fico à disposição para conversar.",

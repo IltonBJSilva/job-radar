@@ -118,10 +118,17 @@ def criar_app() -> Flask:
         }
 
     def proximas(n: int = 3, filtro: str = "") -> list[dict]:
-        vagas = repositorio.listar("nova", limite=400)
         if filtro == "email":
-            vagas = [v for v in vagas if v.get("email_destino")]
+            vagas = [v for v in repositorio.listar("nova", limite=10000) if v.get("email_destino")]
+        else:
+            vagas = repositorio.listar("nova", limite=max(n, 1))
         return [cartao(v) for v in vagas[:n]]
+
+    def inteiro(valor, padrao: int, minimo: int = 1, maximo: int = 500) -> int:
+        try:
+            return max(minimo, min(maximo, int(valor)))
+        except (TypeError, ValueError):
+            return padrao
 
     rotulos = {
         "nova": "Nova — ainda não avaliada", "descartada": "Descartada", "curtida": "Preparando currículo…",
@@ -168,7 +175,7 @@ def criar_app() -> Flask:
     @app.get("/vaga/<id_>")
     def detalhe(id_):
         v = repositorio.obter(id_) or abort(404)
-        return render_template("detalhe.html", v=v)
+        return render_template("detalhe.html", v=v, aviso=request.args.get("aviso", ""))
 
     @app.post("/vaga/<id_>")
     def salvar_detalhe(id_):
@@ -179,10 +186,13 @@ def criar_app() -> Flask:
             "assunto": request.form.get("assunto", v.get("assunto")),
             "corpo": request.form.get("corpo", v.get("corpo")),
         }
+        if email and not email_valido(email):
+            # Não grava e-mail inválido (a vaga sumiria das "Prontas" em silêncio).
+            return redirect(url_for("detalhe", id_=id_, aviso=f"E-mail inválido ou não aceito: {email}"))
         if v["status"] in ("manual", "pronta") and v.get("cv_path"):
-            campos["status"] = "pronta" if email and email_valido(email) else "manual"
+            campos["status"] = "pronta" if email and not (v.get("erro") or "").startswith("Vaga em inglês") else "manual"
         repositorio.atualizar(id_, **campos)
-        return redirect(url_for("detalhe", id_=id_))
+        return redirect(url_for("detalhe", id_=id_, aviso="Salvo."))
 
     @app.get("/arquivo/<id_>/<tipo>")
     def arquivo(id_, tipo):
@@ -229,7 +239,7 @@ def criar_app() -> Flask:
 
     @app.get("/api/proximas")
     def api_proximas():
-        return jsonify(proximas(int(request.args.get("n", 3)), request.args.get("filtro", "")))
+        return jsonify(proximas(inteiro(request.args.get("n"), 3, maximo=50), request.args.get("filtro", "")))
 
     @app.post("/api/decidir/<id_>")
     def api_decidir(id_):
@@ -271,7 +281,7 @@ def criar_app() -> Flask:
 
     @app.post("/api/enviar-lote")
     def api_enviar_lote():
-        limite = int((request.get_json(silent=True) or {}).get("limite", 10))
+        limite = inteiro((request.get_json(silent=True) or {}).get("limite"), 10, maximo=config.LIMITE_DIARIO)
         trabalhador.agendar(f"Enviando até {limite} candidaturas", servico.enviar_lote, limite)
         return jsonify({"ok": True})
 

@@ -149,7 +149,8 @@ SENIORIDADES = [
     ("Júnior", ["junior", "jr", "jr."]),
     ("Pleno", ["pleno", "pl", "mid-level", "mid level"]),
     ("Sênior", ["senior", "sr", "sr."]),
-    ("Especialista", ["especialista", "staff", "principal", "lead", "tech lead", "lider"]),
+    ("Especialista", ["especialista", "staff", "principal", "lead", "tech lead", "lider", "manager", "gerente",
+                      "head", "coordenador", "coordenadora", "arquiteto", "architect"]),
 ]
 
 

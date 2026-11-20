@@ -312,10 +312,12 @@ def enriquecer(score_minimo: int = 40, limite: int = 40, candidato: Candidato | 
         if not v.get("email_destino") and len(v.get("descricao") or "") < DESCRICAO_MINIMA
         and (v.get("score") or 0) >= score_minimo and v.get("link")
     ][:limite]
+    baixadas = 0
     for v in alvo:
         descricao = buscar_descricao(v["link"])
         if len(descricao) <= len(v.get("descricao") or ""):
             continue
+        baixadas += 1
         emails = extrair_emails(descricao)
         a = analisar(candidato, v["titulo"], descricao)
         repositorio.atualizar(
@@ -324,7 +326,7 @@ def enriquecer(score_minimo: int = 40, limite: int = 40, candidato: Candidato | 
             score=a.score, em_comum=a.em_comum, faltando=a.faltando,
         )
         time.sleep(random.uniform(1.0, 2.5))  # educado com os sites
-    return len(alvo)
+    return baixadas
 
 
 # ------------------------------------------------------- modo automático
@@ -365,6 +367,9 @@ def auto(score_minimo: int | None = None, limite: int = 10, real: bool | None = 
     ][: limite * 2]
     for v in candidatas:
         repositorio.atualizar(v["id"], status="curtida")
+    if not candidatas:
+        vazio = {"enviadas": 0, "puladas": [], "erros": [], "real": real}
+        return {"importacao": importacao, "selecionadas": 0, "preparo": {"preparadas": 0, "falhas": 0}, "envio": vazio}
     preparo = preparar_lote([v["id"] for v in candidatas], usar_ia=usar_ia)
     envio = enviar_lote(limite=limite, real=real, ids=[v["id"] for v in candidatas])
     return {"importacao": importacao, "selecionadas": len(candidatas), "preparo": preparo, "envio": envio}

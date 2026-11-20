@@ -9,7 +9,10 @@
     {% for t in v.em_comum %}<span class="chip">✓ {{ t }}</span>{% endfor %}
     {% for t in v.faltando %}<span class="chip miss">{{ t }}</span>{% endfor %}
   </div>
+  {% if aviso %}<p role="status" style="font-weight:700;color:{{ 'var(--ok)' if aviso == 'Salvo.' else 'var(--no)' }}">{{ aviso }}</p>{% endif %}
   {% if v.erro %}<p style="color:var(--no)">{{ v.erro }}</p>{% endif %}
+  {% if v.email_destino and v.email_destino.split('@')[-1] in ('gmail.com','hotmail.com','outlook.com','yahoo.com','yahoo.com.br','bol.com.br','uol.com.br') %}
+  <p class="muted">⚠ E-mail pessoal ({{ v.email_destino }}): confirme no anúncio se é mesmo de quem recruta.</p>{% endif %}
   <p style="margin-top:14px">
     {% if v.cv_path %}<a class="btn" href="/arquivo/{{ v.id }}/cv" target="_blank">📄 Currículo adaptado</a> <a class="btn" href="/arquivo/{{ v.id }}/carta" target="_blank">✉️ Carta</a>{% endif %}
     {% if v.link | link_seguro %}<a class="btn" href="{{ v.link | link_seguro }}" target="_blank" rel="noopener">Anúncio ↗</a>{% endif %}

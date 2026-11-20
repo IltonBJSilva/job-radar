@@ -11,7 +11,7 @@ import mimetypes
 import smtplib
 import ssl
 from email.message import EmailMessage
-from email.utils import formataddr, make_msgid
+from email.utils import formataddr, formatdate, make_msgid
 from pathlib import Path
 
 from candidatura import config
@@ -36,6 +36,7 @@ def montar_mensagem(remetente_nome: str, remetente_email: str, destino: str, ass
     msg["From"] = formataddr((remetente_nome, remetente_email))
     msg["To"] = destino
     msg["Subject"] = " ".join((assunto or "").split())
+    msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain=remetente_email.split("@")[-1] or "localhost")
     if responder_para and responder_para != remetente_email:
         msg["Reply-To"] = responder_para

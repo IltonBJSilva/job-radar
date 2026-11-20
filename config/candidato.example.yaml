@@ -63,6 +63,8 @@ idiomas:
 preferencias:
   # Cargos que você quer. Vagas com esses termos no título ganham score alto.
   cargos_alvo: [backend, back-end, desenvolvedor python, python developer, node.js, software engineer, engenheiro de software, full stack]
+  # Seu nível: vagas muito acima/abaixo perdem pontos na compatibilidade.
+  senioridade: Pleno   # Estágio, Júnior, Pleno, Sênior ou Especialista
   # Termos buscados no Remotar (vagas remotas) ao clicar em "Buscar vagas novas".
   termos_remotar: [python, backend, node]
   modalidade: "Remoto ou híbrido em Uberlândia"

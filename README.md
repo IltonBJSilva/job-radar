@@ -150,7 +150,7 @@ job-radar/
 ├── database/                # SQLite do radar (data/jobs.db, versionado pelo robô)
 ├── notifier/                # Telegram: alertas, digest diário, 👍/👎
 ├── config/candidato.example.yaml
-└── tests/                   # 550 testes (CI a cada push)
+└── tests/                   # 569 testes (CI a cada push)
 ```
 
 **Privacidade:** `config/candidato.yaml`, `data/candidaturas.db`, `saida/` e `.env` estão no

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block titulo %}Novo perfil — Job Radar{% endblock %}
+{% block corpo %}
+<div class="card" style="padding:22px 24px;max-width:620px;margin:0 auto">
+  <h1 style="margin:0 0 6px;font-size:22px">Novo perfil</h1>
+  <p class="muted" style="margin-top:0">Cada perfil é de uma pessoa: currículo, e-mail, vagas e PDFs separados.
+    Dá para trocar a qualquer momento no seletor 👤 lá em cima. Nada do perfil atual é apagado.</p>
+  {% if aviso %}<p style="color:var(--no);font-weight:700" role="alert">{{ aviso }}</p>{% endif %}
+  <form method="post">
+    <label for="np-nome">Nome da pessoa</label>
+    <input id="np-nome" name="nome" placeholder="ex.: João Silva" required maxlength="60" autofocus>
+    <p class="muted" style="font-size:13px">Depois você envia o currículo dela, escolhe a área (cibersegurança, dados…)
+      e conecta o Gmail dela. Começa em <b>modo simulação</b>: nada é enviado até ela ligar.</p>
+    <p><button class="btn primary">Criar e montar o currículo</button> <a class="btn" href="/">Cancelar</a></p>
+  </form>
+</div>
+{% endblock %}

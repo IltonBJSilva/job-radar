@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import re
 import threading
 import time
 from contextlib import nullcontext
@@ -12,7 +13,7 @@ from candidatura import config, repositorio
 from candidatura.adaptador import montar_pacote
 from candidatura.compatibilidade import analisar, idioma_da_vaga
 from candidatura.contato import buscar_descricao, email_valido, emails_com_relevancia, extrair_emails
-from candidatura.documentos import GeradorPDF, html_carta, html_curriculo, pasta_da_vaga, slug
+from candidatura.documentos import GeradorPDF, html_carta, pasta_da_vaga, slug
 from candidatura.envio import ErroConexao, ErroEnvio, ErroFatalSMTP, enviar_smtp, montar_mensagem, salvar_eml
 from candidatura.perfil import Candidato, carregar_candidato
 from core.logger import get_logger
@@ -27,7 +28,7 @@ _TRAVA_ENVIO = threading.Lock()
 
 
 def ja_enviada_de_verdade(vaga: dict) -> bool:
-    return vaga.get("status") in ("enviada", "enviando", "respondida") and not (
+    return vaga.get("status") in ("enviada", "enviando", "respondida", "aplicada") and not (
         vaga.get("status") == "enviada" and vaga.get("simulado")
     )
 
@@ -45,19 +46,56 @@ def pontuar_novas(candidato: Candidato | None = None) -> int:
     return n
 
 
-def importar_tudo(github: bool = True, remotar_termos: list[str] | None = None) -> dict:
-    from candidatura import fontes
+def importar_tudo(github: bool = True, remotar_termos: list[str] | None = None,
+                  fontes: list[str] | None = None, termos: list[str] | None = None,
+                  preferencias: dict | None = None) -> dict:
+    """Busca vagas nas fontes escolhidas. Sem `fontes`, mantém o comportamento
+    antigo (radar + GitHub + Remotar/Gupy pelos `remotar_termos`)."""
+    from candidatura import fontes as coletores
 
     repositorio.iniciar()
-    resultado = {"radar": repositorio.importar_do_radar()}
-    if github:
-        resultado["github"] = fontes.coletar_github()
-    if remotar_termos:
-        resultado["remotar"] = fontes.coletar_remotar(remotar_termos)
-        # Mesmos termos na Gupy: maior ATS do Brasil, com descrição completa.
-        resultado["gupy"] = fontes.coletar_gupy(remotar_termos)
+    if fontes is None:
+        fontes = ["radar"] + (["github"] if github else []) + (["remotar", "gupy"] if remotar_termos else [])
+        termos = remotar_termos
+    termos = termos or []
+    resultado: dict = {}
+    if "radar" in fontes:
+        resultado["radar"] = repositorio.importar_do_radar()
+    if "github" in fontes:
+        resultado["github"] = coletores.coletar_github()
+    if termos:
+        if "remotar" in fontes:
+            resultado["remotar"] = coletores.coletar_remotar(termos)
+        if "gupy" in fontes:  # maior ATS do Brasil, com descrição completa
+            resultado["gupy"] = coletores.coletar_gupy(termos)
+        locais = [f for f in ("linkedin", "catho", "indeed") if f in fontes]
+        if locais:
+            from candidatura import areas
+
+            resultado.update(coletores.coletar_scrapers(locais, termos, foco=areas.foco_regional(preferencias or {})))
+    if "posts" in fontes:  # posts públicos de recrutador com e-mail (Brave Search; sem chave, pula)
+        from candidatura import busca_posts
+
+        resultado["posts"] = busca_posts.coletar(preferencias or {"termos_busca": termos})
+    if "empresas" in fontes:  # vagas abertas direto no site/portal das empresas da lista
+        from candidatura import vagas_empresas
+
+        resultado["empresas"] = vagas_empresas.coletar(preferencias or {"termos_busca": termos})
     resultado["pontuadas"] = pontuar_novas()
+    if preferencias:  # vaga boa na cidade do foco -> aviso no Telegram (se ligado)
+        from candidatura import alertas
+
+        resultado["alertas"] = alertas.avisar_vagas_boas(preferencias)
     return resultado
+
+
+def importar_do_perfil(candidato: Candidato | None = None) -> dict:
+    """Busca vagas com as fontes e os termos que o perfil ativo escolheu."""
+    from candidatura import areas
+
+    candidato = candidato or carregar_candidato()
+    prefs = candidato.preferencias or {}
+    return importar_tudo(fontes=areas.fontes(prefs), termos=areas.termos_busca(prefs), preferencias=prefs)
 
 
 # --------------------------------------------------------------- preparo
@@ -93,17 +131,18 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
         partes_nome = candidato.nome.split()
         nome_arquivo = " ".join([partes_nome[0], partes_nome[-1]]) if len(partes_nome) > 2 else candidato.nome
         nome = slug(nome_arquivo, 40).replace("-", "_").title() or "Candidato"
-        html_cv = html_curriculo(pacote.curriculo)
         html_ct = html_carta(candidato, pacote.carta, vaga["titulo"], vaga.get("empresa") or "", espontanea=espontanea)
-        (pasta / "curriculo.html").write_text(html_cv, encoding="utf-8")
         (pasta / "carta.html").write_text(html_ct, encoding="utf-8")
         (pasta / "email.txt").write_text(f"Assunto: {pacote.assunto}\n\n{pacote.corpo_email}", encoding="utf-8")
 
         cv_pdf = pasta / f"Curriculo_{nome}.pdf"
         carta_pdf = pasta / f"Carta_Apresentacao_{nome}.pdf"
         with (nullcontext(gerador) if gerador else GeradorPDF()) as g:
-            g.gerar(html_cv, cv_pdf)
+            html_cv, paginas = g.gerar_curriculo(pacote.curriculo, cv_pdf)  # sempre 2 páginas (ajusta o layout)
             g.gerar(html_ct, carta_pdf)
+        (pasta / "curriculo.html").write_text(html_cv, encoding="utf-8")
+        if paginas != 2:
+            logger.warning(f"[Candidatura] Currículo saiu com {paginas} página(s) (o alvo é 2): {vaga['titulo']}")
 
         status = "pronta" if destino and email_valido(destino) else "manual"
         aviso = None
@@ -114,7 +153,7 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
         # caso os arquivos ficam salvos, mas a vaga NÃO entra na fila de envio.
         agora = repositorio.obter(id_) or {}
         atual = agora.get("status")
-        if atual in ("nova", "descartada", "enviada", "enviando", "respondida"):
+        if atual in ("nova", "descartada", "enviada", "enviando", "respondida", "aplicada"):
             status = atual
         # E-mail editado por você durante o preparo vence o encontrado.
         if agora.get("email_destino") and agora.get("email_destino") != vaga.get("email_destino"):
@@ -140,7 +179,7 @@ def preparar(id_: str, candidato: Candidato | None = None, gerador: GeradorPDF |
         logger.info(f"[Candidatura] Preparada ({status}, {analise.score}%): {vaga['titulo']} — {vaga.get('empresa')}")
     except Exception as e:
         atual = (repositorio.obter(id_) or {}).get("status")
-        if atual not in ("nova", "descartada", "enviada", "enviando", "respondida"):
+        if atual not in ("nova", "descartada", "enviada", "enviando", "respondida", "aplicada"):
             repositorio.atualizar(id_, status="erro", erro=f"preparo: {e}", cv_path=None, carta_path=None)
         logger.error(f"[Candidatura] Erro ao preparar {id_}: {e}")
         raise
@@ -203,7 +242,7 @@ def enviar(id_: str, real: bool | None = None, candidato: Candidato | None = Non
     try:
         if real and vaga_encerrada(vaga):
             repositorio.atualizar(id_, status="encerrada", erro="A vaga foi fechada antes do envio.")
-            raise VagaEncerrada("vaga encerrada (issue fechada no GitHub)")
+            raise VagaEncerrada("a vaga foi encerrada na fonte (anúncio removido ou fechado) — não enviei")
         msg = montar_mensagem(candidato.nome, remetente, vaga["email_destino"], vaga["assunto"] or "",
                               vaga["corpo"] or "", anexos, responder_para=candidato.email)
         if real:
@@ -235,22 +274,100 @@ class VagaEncerrada(ErroEnvio):
     pass
 
 
-def vaga_encerrada(vaga: dict) -> bool:
-    """Issue do GitHub fechada = vaga preenchida/cancelada. Outras fontes não
-    expõem isso de forma confiável; na dúvida, considera aberta."""
-    import re
+def _esperar_intervalo_anti_spam(real: bool) -> None:
+    """Garante um intervalo aleatório desde o último envio real (curtidas seguidas)."""
+    if not real:
+        return
+    ultimas = repositorio.listar("enviada", limite=1, ordem="enviada_em DESC")
+    ultimo = next((v.get("enviada_em") for v in ultimas if not v.get("simulado")), None)
+    if not ultimo:
+        return
+    passado = (datetime.now() - datetime.fromisoformat(ultimo)).total_seconds()
+    espera = random.uniform(config.INTERVALO_MIN_SEG, config.INTERVALO_MAX_SEG) - passado
+    if espera > 0:
+        logger.info(f"[Candidatura] Aguardando {espera:.0f}s antes do próximo envio (anti-spam)")
+        time.sleep(espera)
 
+
+def preparar_e_enviar(id_: str, real: bool | None = None) -> dict:
+    """Coração com ENVIAR_AO_CURTIR: prepara e, se a vaga tiver e-mail, envia."""
+    real = config.ENVIO_REAL if real is None else real
+    vaga = preparar(id_)
+    if not vaga or vaga["status"] != "pronta":
+        logger.info(f"[Candidatura] Não enviada automaticamente ({(vaga or {}).get('status')}): {id_}")
+        return vaga
+    _esperar_intervalo_anti_spam(real)
+    if (repositorio.obter(id_) or {}).get("status") != "pronta":  # desfeita durante a espera
+        return repositorio.obter(id_)
+    return enviar(id_, real=real)
+
+
+_TEXTO_ENCERRADA = re.compile(
+    r"vaga encerrada|inscri[cç][oõ]es encerradas|n[aã]o est[aá] mais dispon[ií]vel|vaga n[aã]o encontrada|"
+    r"no longer accepting applications|n[aã]o aceita mais candidaturas|this job is no longer|job (?:is )?closed|"
+    r"position has been filled|vaga (?:foi )?preenchida",
+    re.I,
+)
+
+
+def _gupy_encerrada(r) -> bool:
+    """Gupy: o texto "Inscrições encerradas" está em TODA página (traduções da interface), então
+    olhamos os dados da vaga: status diferente de "published", prazo vencido, ou id inexistente
+    (redireciona para o login)."""
+    import json
+    from datetime import datetime, timezone
+
+    if r.status_code in (404, 410) or "/jobs/" not in (getattr(r, "url", "") or "/jobs/"):
+        return True
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', r.text or "", re.S)
+    if r.status_code != 200 or not m:
+        return False
+    job = ((json.loads(m.group(1)).get("props") or {}).get("pageProps") or {}).get("job") or {}
+    if not job:
+        return False
+    if job.get("status") and job["status"] != "published":
+        return True
+    for campo in ("expiresAt", "registerEndDate"):
+        try:
+            if job.get(campo) and datetime.fromisoformat(job[campo].replace("Z", "+00:00")) < datetime.now(timezone.utc):
+                return True
+        except (ValueError, AttributeError):
+            pass
+    return False
+
+
+def vaga_encerrada(vaga: dict, sessao=None) -> bool:
+    """A vaga fechou? Confere na fonte antes de enviar: issue do GitHub fechada,
+    vaga removida no Gupy/Greenhouse/Lever (404) ou anúncio dizendo "encerrada"
+    (Gupy, LinkedIn). Erro de rede ou página diferente = considera ABERTA."""
     import requests
 
-    m = re.match(r"https://github\.com/([^/]+/[^/]+)/issues/(\d+)", vaga.get("link") or "")
-    if not m:
-        return False
+    http = sessao or requests
+    link = vaga.get("link") or ""
+    ua = {"User-Agent": "Mozilla/5.0 (job-radar)"}
     try:
-        r = requests.get(f"https://api.github.com/repos/{m.group(1)}/issues/{m.group(2)}",
+        m = re.match(r"https://github\.com/([^/]+/[^/]+)/issues/(\d+)", link)
+        if m:
+            r = http.get(f"https://api.github.com/repos/{m.group(1)}/issues/{m.group(2)}",
                          headers={"User-Agent": "job-radar-candidatura"}, timeout=10)
-        return r.status_code == 200 and r.json().get("state") == "closed"
-    except Exception:
+            return r.status_code == 200 and r.json().get("state") == "closed"
+        m = re.search(r"(?:boards|job-boards)\.greenhouse\.io/([\w-]+)/jobs/(\d+)", link)
+        if m:
+            r = http.get(f"https://boards-api.greenhouse.io/v1/boards/{m.group(1)}/jobs/{m.group(2)}", headers=ua, timeout=10)
+            return r.status_code == 404
+        m = re.search(r"jobs\.lever\.co/([\w-]+)/([0-9a-f-]{20,})", link)
+        if m:
+            r = http.get(f"https://api.lever.co/v0/postings/{m.group(1)}/{m.group(2)}", headers=ua, timeout=10)
+            return r.status_code == 404
+        m = re.search(r"linkedin\.com/jobs/view/(?:[\w-]*-)?(\d{6,})", link)
+        if m:
+            r = http.get(f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{m.group(1)}", headers=ua, timeout=10)
+            return r.status_code == 200 and bool(_TEXTO_ENCERRADA.search(r.text))
+        if re.search(r"\.gupy\.io/(?:jobs|job)/", link):
+            return _gupy_encerrada(http.get(link, headers=ua, timeout=10))
+    except Exception:  # noqa: BLE001 — na dúvida, a vaga está aberta
         return False
+    return False
 
 
 def enviar_lote(limite: int = 10, real: bool | None = None, ids: list[str] | None = None,
@@ -354,7 +471,7 @@ def auto(score_minimo: int | None = None, limite: int = 10, real: bool | None = 
     """Sem swipe: importa, escolhe as vagas mais compatíveis QUE TÊM e-mail,
     prepara e envia. Vagas sem e-mail ficam como estão para o swipe."""
     score_minimo = config.SCORE_MINIMO_AUTO if score_minimo is None else score_minimo
-    importacao = importar_tudo(remotar_termos=remotar_termos)
+    importacao = importar_tudo(remotar_termos=remotar_termos) if remotar_termos else importar_do_perfil()
     enriquecer(score_minimo=max(0, score_minimo - 15))
     def email_de_recrutamento(v: dict) -> bool:
         # Sem revisão humana, só envia para e-mail que (1) aparece em contexto

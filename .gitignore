@@ -17,5 +17,10 @@ config/candidato.yaml
 config/candidato.yaml.bak
 data/candidaturas.db*
 saida/
+perfis/
+data/perfil_ativo.txt
+data/localidades.json
+data/rotina_*
+dist/
 .pytest_cache/
 rodar_diario.cmd

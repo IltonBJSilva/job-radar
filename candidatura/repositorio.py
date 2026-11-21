@@ -23,7 +23,10 @@ from datetime import datetime, timedelta
 from candidatura import config
 from core.config import DB_PATH as RADAR_DB_PATH
 
-STATUS = ("nova", "descartada", "curtida", "pronta", "manual", "enviando", "enviada", "erro", "respondida", "encerrada")
+# "aplicada" = você se candidatou pelo site da empresa (vaga sem e-mail). Não conta no limite
+# de e-mails, não recebe follow-up e não bloqueia a empresa por 30 dias.
+STATUS = ("nova", "descartada", "curtida", "pronta", "manual", "enviando", "enviada", "aplicada", "erro",
+          "respondida", "encerrada")
 
 _COLUNAS = """
     id TEXT PRIMARY KEY,
@@ -56,7 +59,10 @@ _COLUNAS = """
     followups INTEGER DEFAULT 0,
     ultimo_followup_em TEXT,
     resposta_em TEXT,
-    resposta_resumo TEXT
+    resposta_resumo TEXT,
+    aplicada_em TEXT,
+    alertada_em TEXT,
+    etapa TEXT
 """
 
 _JSON = ("emails_encontrados", "em_comum", "faltando")
@@ -327,11 +333,13 @@ def metricas() -> dict:
     with conectar() as conn:
         total_env = conn.execute("SELECT COUNT(*) FROM candidaturas WHERE status='enviada' AND simulado=0").fetchone()[0]
         simuladas = conn.execute("SELECT COUNT(*) FROM candidaturas WHERE status='enviada' AND simulado=1").fetchone()[0]
+        aplicadas = conn.execute("SELECT COUNT(*) FROM candidaturas WHERE status='aplicada'").fetchone()[0]
         media = conn.execute("SELECT AVG(score) FROM candidaturas WHERE status IN ('pronta','enviada','manual')").fetchone()[0]
     return {
         "por_status": contagem_por_status(),
         "enviadas_reais": total_env,
         "simuladas": simuladas,
+        "aplicadas_site": aplicadas,
         "enviadas_hoje": enviadas_hoje(),
         "score_medio": round(media or 0),
     }

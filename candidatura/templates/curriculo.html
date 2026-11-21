@@ -3,99 +3,159 @@
 <head>
 <meta charset="utf-8">
 <title>{{ c.candidato.nome }} — Currículo</title>
+{#
+  Réplica do modelo Overleaf (resume.cls): nome centralizado em caixa alta,
+  seções com filete, cargo em negrito + empresa à direita, data em itálico,
+  tópicos com "·". `L` é a tipografia escolhida para caber em 2 páginas; o
+  conteúdo já chega cortado (se precisou) por documentos.plano_de_cortes.
+#}
 <style>
-  @page { size: A4; margin: 14mm 15mm; }
+  {{ fontes_css | safe }}
+  @page { size: A4; margin: {{ L.margem }}mm {{ L.margem_lado }}mm; }
   * { box-sizing: border-box; }
-  body { font-family: "Segoe UI", Calibri, Arial, sans-serif; color: #1d2433; font-size: 10.3pt; line-height: 1.42; margin: 0; }
-  h1 { font-size: 21pt; margin: 0; letter-spacing: .2px; }
-  .titulo { font-size: 11.5pt; color: #2f5bd3; font-weight: 600; margin-top: 2px; }
-  .contato { margin-top: 6px; color: #475069; font-size: 9.3pt; }
-  .contato a { color: #475069; text-decoration: none; }
-  .contato span + span::before { content: "  •  "; color: #a0a8bb; }
-  h2 { font-size: 10.5pt; text-transform: uppercase; letter-spacing: 1.2px; color: #2f5bd3; border-bottom: 1.5px solid #dfe5f5; padding-bottom: 3px; margin: 15px 0 7px; }
-  p { margin: 0 0 4px; }
-  .skills { list-style: none; margin: 0; padding: 0; }
-  .skills li { margin-bottom: 3px; }
-  .nome { font-weight: 700; }
-  .skills b.grupo { color: #1d2433; }
-  .hl { font-weight: 700; color: #12307f; }
-  .item { margin-bottom: 9px; page-break-inside: avoid; }
-  .item-topo { display: flex; justify-content: space-between; gap: 10px; }
-  .item-topo .nome { font-weight: 700; }
-  .item-topo .quando { color: #66708a; white-space: nowrap; font-size: 9.3pt; }
-  .sub { color: #475069; font-size: 9.5pt; }
-  ul { margin: 3px 0 0 16px; padding: 0; }
-  li { margin-bottom: 2px; }
-  .tec { color: #66708a; font-size: 9pt; margin-top: 2px; }
-  a { color: #2f5bd3; }
+  html { -webkit-print-color-adjust: exact; }
+  body {
+    font-family: "CMU Serif", "Latin Modern Roman", "Computer Modern", "Times New Roman", serif;
+    font-size: {{ L.fonte }}pt; line-height: {{ L.entrelinha }}; color: #000; margin: 0;
+    text-rendering: geometricPrecision;
+  }
+  a { color: #000; text-decoration: none; }
+  b, strong { font-weight: 700; }
+
+  header { text-align: center; margin-bottom: {{ 6 * L.espaco }}pt; }
+  .nome { font-size: {{ L.fonte * 2.05 }}pt; font-weight: 700; text-transform: uppercase; letter-spacing: .5pt;
+          line-height: 1.1; margin-bottom: {{ 4 * L.espaco }}pt; }
+  .endereco { line-height: 1.35; }
+  .endereco span + span::before { content: "\00a0\00a0\22C4\00a0\00a0"; }
+  .endereco.links span + span::before { content: "\00a0\00a0\00a0"; }
+
+  section { margin-top: {{ 9 * L.espaco }}pt; }
+  h2 { font-size: {{ L.fonte }}pt; font-weight: 700; text-transform: uppercase; letter-spacing: .2pt;
+       margin: 0; padding-bottom: 1.5pt; border-bottom: .5pt solid #000; break-after: avoid; }
+  .corpo { padding-left: 1.5em; padding-top: {{ 3 * L.espaco }}pt; }
+  .corpo p { margin: 0 0 {{ 4 * L.espaco }}pt; text-align: justify; hyphens: auto; }
+  .corpo p:last-child { margin-bottom: 0; }
+
+  .linha { display: flex; justify-content: space-between; align-items: baseline; gap: 12pt; }
+  .linha > :last-child { text-align: right; white-space: nowrap; }
+  .it { font-style: italic; }
+
+  .bloco { margin-bottom: {{ 6 * L.espaco }}pt; break-inside: avoid; }
+  .bloco:last-child { margin-bottom: 0; }
+  ul { list-style: none; margin: {{ 2 * L.espaco }}pt 0 0; padding: 0 0 0 1.25em; }
+  li { position: relative; margin-bottom: {{ 1.5 * L.espaco }}pt; text-align: justify; hyphens: auto; }
+  li::before { content: "\00B7"; position: absolute; left: -.85em; font-weight: 700; }
+
+  .habilidades { display: grid; grid-template-columns: max-content 1fr; column-gap: 2ex; row-gap: {{ 1.5 * L.espaco }}pt; }
+  .habilidades .rotulo { font-weight: 700; }
+  .hl { font-weight: 700; }
+
+  .formacao .bloco { margin-bottom: {{ 4 * L.espaco }}pt; }
 </style>
 </head>
 <body>
-  <header>
-    <h1>{{ c.candidato.nome }}</h1>
-    <div class="titulo">{{ c.titulo }}</div>
-    <div class="contato">
-      {% if c.candidato.cidade %}<span>{{ c.candidato.cidade }}</span>{% endif %}
-      {% if c.candidato.telefone %}<span>{{ c.candidato.telefone }}</span>{% endif %}
-      {% if c.candidato.email %}<span><a href="mailto:{{ c.candidato.email }}">{{ c.candidato.email }}</a></span>{% endif %}
-      {% for nome, url in c.candidato.links.items() %}<span><a href="{{ url }}">{{ url | replace('https://', '') | replace('http://', '') | replace('www.', '') }}</a></span>{% endfor %}
+{% set cand = c.candidato %}
+<header>
+  <div class="nome">{{ cand.nome }}</div>
+  <div class="endereco">
+    {% if cand.cidade %}<span>{{ cand.cidade }}</span>{% endif %}
+    {% if cand.email %}<span><a href="mailto:{{ cand.email }}">{{ cand.email }}</a></span>{% endif %}
+    {% if cand.telefone %}<span>{{ cand.telefone }}</span>{% endif %}
+  </div>
+  {% if cand.links %}
+  <div class="endereco links">
+    {% for nome, url in cand.links.items() if nome | lower != 'certificados' %}<span><a href="{{ url }}">{{ rotulos.get(nome | lower, nome | capitalize) }}</a></span>{% endfor %}
+  </div>
+  {% endif %}
+</header>
+
+{% if c.resumo %}
+<section>
+  <h2>Resumo Profissional</h2>
+  <div class="corpo">
+    {% for par in c.resumo.split('\n\n') if par.strip() %}<p>{{ par | replace('\n', ' ') }}</p>{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if cand.formacao %}
+<section class="formacao">
+  <h2>Formação Acadêmica</h2>
+  <div class="corpo">
+    {% for f in cand.formacao %}
+    <div class="bloco">
+      <div class="linha"><b>{{ f.curso }}</b><span>{{ f.periodo }}</span></div>
+      <div class="linha"><span>{{ f.instituicao }}</span>{% if f.detalhe %}<span>{{ f.detalhe }}</span>{% endif %}</div>
     </div>
-  </header>
-
-  {% if c.resumo %}
-  <h2>Resumo</h2>
-  <p>{{ c.resumo }}</p>
-  {% endif %}
-
-  {% if c.grupos %}
-  <h2>Competências técnicas</h2>
-  <ul class="skills">
-    {% for g in c.grupos %}
-    <li><b class="grupo">{{ g.nome }}:</b>
-      {% for nome, destaque in g.itens %}{% if destaque %}<span class="hl">{{ nome }}</span>{% else %}{{ nome }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}.
-    </li>
     {% endfor %}
-  </ul>
-  {% endif %}
-
-  {% if c.experiencias %}
-  <h2>Experiência profissional</h2>
-  {% for e in c.experiencias %}
-  <div class="item">
-    <div class="nome">{{ e.cargo }} — {{ e.empresa }}</div>
-    <div class="sub">{{ e.periodo }}{% if e.local %} · {{ e.local }}{% endif %}</div>
-    {% if e.conquistas %}<ul>{% for x in e.conquistas %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
-    {% if e.tecnologias %}<div class="tec">{{ e.tecnologias | join(' · ') }}</div>{% endif %}
   </div>
-  {% endfor %}
-  {% endif %}
+</section>
+{% endif %}
 
-  {% if c.projetos %}
-  <h2>Projetos</h2>
-  {% for p in c.projetos %}
-  <div class="item">
-    <div class="item-topo"><span class="nome">{{ p.nome }}</span>{% if p.link %}<a class="quando" href="{{ p.link }}">{{ p.link | replace('https://', '') }}</a>{% endif %}</div>
-    <p>{{ p.descricao }}</p>
-    {% if p.tecnologias %}<div class="tec">{{ p.tecnologias | join(' · ') }}</div>{% endif %}
+{% if c.grupos %}
+<section>
+  <h2>Habilidades Técnicas</h2>
+  <div class="corpo habilidades">
+    {% for g in c.grupos %}
+    <div class="rotulo">{{ g.nome }}</div>
+    <div>{% for nome, destaque in g.itens %}{% if destaque %}<span class="hl">{{ nome }}</span>{% else %}{{ nome }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+    {% endfor %}
   </div>
-  {% endfor %}
-  {% endif %}
+</section>
+{% endif %}
 
-  {% if c.candidato.formacao %}
-  <h2>Formação</h2>
-  {% for f in c.candidato.formacao %}
-  <div class="item-topo"><span><b>{{ f.curso }}</b> — {{ f.instituicao }}</span><span class="quando">{{ f.periodo }}</span></div>
-  {% endfor %}
-  {% endif %}
+{% if c.experiencias %}
+<section>
+  <h2>Experiência Profissional</h2>
+  <div class="corpo">
+    {% for e in c.experiencias %}
+    <div class="bloco">
+      <div class="linha"><b>{{ e.cargo }}</b><span>{{ e.empresa }}</span></div>
+      <div class="linha it"><span>{{ e.periodo }}</span>{% if e.local %}<span>{{ e.local }}</span>{% endif %}</div>
+      {% if e.conquistas %}<ul>{% for x in e.conquistas %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 
-  {% if c.candidato.certificacoes %}
-  <h2>Certificações</h2>
-  <ul>{% for x in c.candidato.certificacoes %}<li>{{ x }}</li>{% endfor %}</ul>
+{% macro projeto(p) %}
+<div class="bloco">
+  {% if p.organizacao or p.periodo %}
+  <div class="linha"><b>{{ p.nome }}</b><span>{{ p.organizacao }}</span></div>
+  {% if p.periodo %}<div class="linha it"><span>{{ p.periodo }}</span>{% if p.link %}<a href="{{ p.link }}"><b>[GitHub]</b></a>{% endif %}</div>{% endif %}
+  {% else %}
+  <div class="linha"><b>{{ p.nome }}{% if p.tecnologias %} | {{ p.tecnologias[:3] | join(', ') }}{% endif %}</b>{% if p.link %}<a href="{{ p.link }}"><b>[GitHub]</b></a>{% endif %}</div>
   {% endif %}
+  {% set itens = p.itens or ([p.descricao] if p.descricao else []) %}
+  {% if itens %}<ul>{% for x in itens %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+</div>
+{% endmacro %}
 
-  {% if c.candidato.idiomas %}
-  <h2>Idiomas</h2>
-  <p>{{ c.candidato.idiomas | join('  •  ') }}</p>
-  {% endif %}
+{% set projetos_ia = c.projetos | selectattr('ia') | list %}
+{% set outros = c.projetos | rejectattr('ia') | list %}
+{% if projetos_ia %}
+<section>
+  <h2>Projetos e Aplicações em Inteligência Artificial</h2>
+  <div class="corpo">{% for p in projetos_ia %}{{ projeto(p) }}{% endfor %}</div>
+</section>
+{% endif %}
+{% if outros %}
+<section>
+  <h2>Projetos Selecionados</h2>
+  <div class="corpo">{% for p in outros %}{{ projeto(p) }}{% endfor %}</div>
+</section>
+{% endif %}
+
+{% if cand.certificacoes %}
+<section>
+  <h2>Certificações e Capacitações</h2>
+  <div class="corpo">
+    {% set certificados = cand.links.get('certificados') %}
+    {% if certificados %}<p><a href="{{ certificados }}"><b>Formação Complementar</b></a></p>{% endif %}
+    {% for x in cand.certificacoes %}<p>{{ x }}</p>{% endfor %}
+  </div>
+</section>
+{% endif %}
 </body>
 </html>

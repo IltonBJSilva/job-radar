@@ -1,17 +1,55 @@
 {% extends "base.html" %}
 {% block titulo %}Adicionar vaga — Job Radar{% endblock %}
+{% block head %}
+<style>
+  .colar { border: 2px dashed var(--line); border-radius: 14px; padding: 16px; margin-bottom: 18px; }
+  .colar textarea { min-height: 150px; }
+  .lido { font-size: 13px; margin-top: 6px; }
+  .opcao { display: flex; gap: 8px; align-items: center; margin: 8px 0; font-weight: 600; }
+  .opcao input { width: auto; margin: 0; }
+</style>
+{% endblock %}
 {% block corpo %}
 <div class="card" style="padding:22px 24px;max-width:760px;margin:0 auto">
-  <h1 style="margin-top:0;font-size:22px">Adicionar vaga manualmente</h1>
-  <p class="muted">Viu uma vaga no LinkedIn, grupo de WhatsApp ou Instagram? Cole aqui. O sistema acha o e-mail na descrição, adapta seu currículo e escreve a carta.</p>
+  <h1 style="margin-top:0;font-size:22px">Adicionar vaga ou post de recrutador</h1>
+  <div class="colar">
+    <label for="n-post" style="margin-top:0">📋 Cole aqui o post (LinkedIn, WhatsApp, Instagram, e-mail…)</label>
+    <textarea id="n-post" placeholder="Ex.: “A Empresa X está contratando Dev Python Pleno! 📍 Uberlândia - MG | Híbrido. Envie o CV para vagas@empresax.com.br”"></textarea>
+    <p style="margin:8px 0 0"><button type="button" class="btn primary" onclick="lerPost(this)">Ler post e preencher</button>
+      <span class="lido" id="lido" role="status"></span></p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:0">Copie o texto do post no seu feed e cole. O sistema acha cargo, empresa, e-mail,
+      cidade e modalidade — confira abaixo antes de adicionar. Não acessa sua conta do LinkedIn.</p>
+  </div>
   <form method="post">
     <label for="n-titulo">Título da vaga *</label><input id="n-titulo" name="titulo" required placeholder="Desenvolvedor Backend Python Pleno">
     <label for="n-empresa">Empresa</label><input id="n-empresa" name="empresa">
-    <label for="n-link">Link do anúncio</label><input id="n-link" name="link" placeholder="https://...">
-    <label for="n-email">E-mail para envio (se não estiver na descrição)</label><input id="n-email" name="email" placeholder="vagas@empresa.com.br">
+    <label for="n-link">Link do anúncio / post</label><input id="n-link" name="link" placeholder="https://...">
+    <label for="n-email">E-mail para envio</label><input id="n-email" name="email" list="n-emails" placeholder="vagas@empresa.com.br">
+    <datalist id="n-emails"></datalist>
     <label for="n-local">Local / modalidade</label><input id="n-local" name="local" placeholder="Remoto">
-    <label for="n-descricao">Descrição completa (cole tudo)</label><textarea id="n-descricao" name="descricao" rows="12"></textarea>
+    <label for="n-descricao">Descrição completa (cole tudo)</label><textarea id="n-descricao" name="descricao" rows="10"></textarea>
+    <label class="opcao"><input type="checkbox" name="enviar" {% if enviar_ao_curtir %}checked{% endif %}> Enviar assim que o currículo ficar pronto (se tiver e-mail)</label>
     <p><button class="btn primary">Adicionar e preparar</button></p>
   </form>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function lerPost(b) {
+  const texto = document.getElementById('n-post').value.trim();
+  if (!texto) return toast('Cole o texto do post primeiro.');
+  b.disabled = true;
+  try {
+    const r = await post('/api/ler-post', { texto });
+    const set = (id, v) => { if (v) document.getElementById(id).value = v; };
+    set('n-titulo', r.titulo); set('n-empresa', r.empresa); set('n-link', r.link); set('n-email', r.email);
+    set('n-local', [r.local, r.modalidade && r.modalidade !== r.local ? r.modalidade : ''].filter(Boolean).join(' · '));
+    document.getElementById('n-descricao').value = r.descricao;
+    document.getElementById('n-emails').innerHTML = r.emails.map(e => `<option value="${e}"></option>`).join('');
+    const faltou = [['cargo', r.titulo], ['empresa', r.empresa], ['e-mail', r.email], ['local', r.local]].filter(([, v]) => !v).map(([n]) => n);
+    document.getElementById('lido').textContent = faltou.length ? `✓ Lido. Não achei: ${faltou.join(', ')} — complete abaixo.` : '✓ Lido! Confira e clique em “Adicionar e preparar”.';
+  } catch (e) { toast('Erro: ' + e.message); }
+  b.disabled = false;
+}
+</script>
 {% endblock %}

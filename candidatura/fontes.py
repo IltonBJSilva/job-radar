@@ -243,3 +243,70 @@ def coletar_gupy(termos: list[str], por_termo: int = 50) -> int:
             logger.warning(f"[Gupy] '{termo}': {e}")
     logger.info(f"[Gupy] {novas} vaga(s) nova(s) na fila")
     return novas
+
+
+# ------------------------------------------------ busca local pelos termos do perfil
+
+def _scraper(nome: str, termos: list[str], foco: dict | None = None):
+    if nome == "linkedin":
+        from scrapers.linkedin import LinkedInScraper
+
+        # Brasil (nacional + remoto) e, com foco regional ligado, também a cidade ("Uberlândia, Minas Gerais, Brazil").
+        cidades = []
+        if foco:
+            from candidatura.localidades import _NOMES_UF
+
+            estado = _NOMES_UF.get(foco.get("uf") or "", "")
+            cidades = [", ".join(p for p in (foco["cidade"], estado, "Brazil") if p)]
+        return LinkedInScraper(termos, locations=["Brazil"], locations_remoto_apenas=[],
+                               locations_cidades_presencial=cidades)
+    if nome == "catho":
+        from scrapers.catho import CathoScraper
+
+        return CathoScraper(termos)
+    if nome == "indeed":
+        from scrapers.indeed import IndeedScraper
+
+        return IndeedScraper(termos)
+    raise ValueError(nome)
+
+
+def job_para_vaga(job) -> dict:
+    emails = extrair_emails(job.texto or "")
+    return {
+        "id": repositorio.gerar_id(job.link, job.titulo, job.empresa),
+        "titulo": (job.titulo or "").strip(),
+        "empresa": job.empresa or "",
+        "local": job.local or "",
+        "modalidade": job.modalidade or "",
+        "link": job.link or "",
+        "site": job.site or "",
+        "origem": "busca",
+        "publicado_em": job.publicado_em or "",
+        "descricao": (job.texto or "")[:20000],
+        "emails_encontrados": emails,
+        "email_destino": emails[0] if emails else None,
+    }
+
+
+def coletar_scrapers(nomes: list[str], termos: list[str], maximo_termos: int = 6,
+                     foco: dict | None = None) -> dict[str, int]:
+    """LinkedIn/Catho/Indeed rodando NA SUA MÁQUINA com os termos do seu perfil —
+    é o que faz o sistema servir para qualquer área (o radar do GitHub Actions
+    só busca vagas de desenvolvimento)."""
+    termos = [t for t in termos if t][:maximo_termos]
+    resultado: dict[str, int] = {}
+    for nome in nomes:
+        novas = 0
+        try:
+            for job in _scraper(nome, termos, foco).buscar_vagas():
+                vaga = job_para_vaga(job)
+                if not vaga["titulo"] or repositorio.existe_semelhante(vaga["titulo"], vaga.get("email_destino"), vaga.get("empresa")):
+                    continue
+                if repositorio.inserir(vaga):
+                    novas += 1
+        except Exception as e:  # uma fonte fora do ar não derruba as outras
+            logger.warning(f"[Busca local] {nome}: {e}")
+        logger.info(f"[Busca local] {nome}: {novas} vaga(s) nova(s)")
+        resultado[nome] = novas
+    return resultado

@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from candidatura import ia
-from candidatura.compatibilidade import Analise, canonizar, contar_ocorrencias, termos_declarados
+from candidatura.compatibilidade import Analise, canonizar, contar_ocorrencias, termos_declarados, variante_para_vaga
 from candidatura.perfil import Candidato, Experiencia, Projeto
 
 
@@ -71,7 +71,7 @@ def _ordenar_experiencias(candidato: Candidato, analise: Analise) -> list[Experi
     return saida
 
 
-def _ordenar_projetos(candidato: Candidato, analise: Analise, maximo: int = 4) -> list[Projeto]:
+def _ordenar_projetos(candidato: Candidato, analise: Analise, maximo: int | None = 4) -> list[Projeto]:
     pontuados = [
         (_relevancia(f"{p.nome} {p.descricao} {' '.join(p.tecnologias)}", analise.pedidas), i, p)
         for i, p in enumerate(candidato.projetos)
@@ -282,7 +282,7 @@ def _pacote_espontaneo(candidato: Candidato, vaga: dict, analise: Analise) -> Pa
     curriculo = CurriculoAdaptado(
         candidato=candidato, titulo=candidato.titulo, resumo=candidato.resumo,
         grupos=_ordenar_habilidades(candidato, analise), experiencias=_ordenar_experiencias(candidato, analise),
-        projetos=_ordenar_projetos(candidato, analise), destaques=[],
+        projetos=_ordenar_projetos(candidato, analise, maximo=None), destaques=[],
     )
     assunto = f"Candidatura espontânea: {titulo_curto(cargo)} — {_primeiro_ultimo(candidato.nome)}"
     return Pacote(curriculo=curriculo, carta=carta, assunto=assunto,
@@ -290,6 +290,7 @@ def _pacote_espontaneo(candidato: Candidato, vaga: dict, analise: Analise) -> Pa
 
 
 def montar_pacote(candidato: Candidato, vaga: dict, analise: Analise, usar_ia: bool = True) -> Pacote:
+    candidato = variante_para_vaga(candidato, vaga.get("titulo") or "")
     if vaga.get("origem") == "espontanea":
         return _pacote_espontaneo(candidato, vaga, analise)
     titulo_vaga = vaga.get("titulo", "").strip()
@@ -301,8 +302,14 @@ def montar_pacote(candidato: Candidato, vaga: dict, analise: Analise, usar_ia: b
     resumo = None
     carta = None
     if usar_ia and ia.disponivel():
-        resumo = ia.saida_segura(ia.resumo_adaptado(candidato, titulo_vaga, empresa, descricao, declaradas), candidato)
-        carta = ia.saida_segura(ia.carta_adaptada(candidato, titulo_vaga, empresa, descricao, declaradas), candidato)
+        contexto = f"{titulo_vaga} {empresa} {descricao}"
+        from candidatura import config
+
+        if config.IA_NO_RESUMO:  # padrão: o resumo do currículo é o SEU texto
+            resumo = ia.saida_segura(ia.resumo_adaptado(candidato, titulo_vaga, empresa, descricao, declaradas),
+                                     candidato, contexto)
+        carta = ia.saida_segura(ia.carta_adaptada(candidato, titulo_vaga, empresa, descricao, declaradas),
+                                candidato, contexto)
         usou_ia = bool(resumo or carta)
 
     curriculo = CurriculoAdaptado(
@@ -311,7 +318,7 @@ def montar_pacote(candidato: Candidato, vaga: dict, analise: Analise, usar_ia: b
         resumo=resumo or _resumo_padrao(candidato, declaradas, analise.score),
         grupos=_ordenar_habilidades(candidato, analise),
         experiencias=_ordenar_experiencias(candidato, analise),
-        projetos=_ordenar_projetos(candidato, analise),
+        projetos=_ordenar_projetos(candidato, analise, maximo=None),  # o layout de 2 páginas decide quantos cabem
         destaques=analise.em_comum,
     )
     carta = carta or _carta_padrao(candidato, analise, declaradas, titulo_vaga, empresa)

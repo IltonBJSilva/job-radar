@@ -30,6 +30,10 @@ class Projeto:
     descricao: str
     link: str = ""
     tecnologias: list[str] = field(default_factory=list)
+    organizacao: str = ""  # "Projetos Independentes" (aparece à direita do nome)
+    periodo: str = ""
+    itens: list[str] = field(default_factory=list)  # tópicos; sem eles, a descrição vira o tópico
+    ia: bool = False  # vai para a seção "Projetos e Aplicações em Inteligência Artificial"
 
 
 @dataclass
@@ -37,6 +41,7 @@ class Formacao:
     curso: str
     instituicao: str
     periodo: str = ""
+    detalhe: str = ""  # "6º período · previsão: dez/2028" (à direita da instituição)
 
 
 @dataclass
@@ -56,6 +61,8 @@ class Candidato:
     idiomas: list[str] = field(default_factory=list)
     preferencias: dict = field(default_factory=dict)
     assinatura_email: str = ""
+    # Versões do perfil para tipos de vaga (ex.: "estagio"), já mescladas com a base.
+    variantes: dict[str, "Candidato"] = field(default_factory=dict)
 
     @property
     def todas_habilidades(self) -> list[str]:
@@ -132,6 +139,22 @@ def carregar_candidato(caminho: Path | str | None = None) -> Candidato:
     return candidato
 
 
+_SUBSTITUIVEIS = ("resumo", "habilidades", "experiencias", "projetos", "formacao", "certificacoes", "idiomas",
+                  "assinatura_email")
+
+
+def _mesclar_variante(base: dict, variante: dict) -> dict:
+    """A variante troca seções inteiras; em pessoal/links/preferencias, só as chaves que declarar."""
+    saida = {k: v for k, v in base.items() if k != "variantes"}
+    for chave in ("pessoal", "links", "preferencias"):
+        if isinstance(variante.get(chave), dict):
+            saida[chave] = {**(base.get(chave) or {}), **variante[chave]}
+    for chave in _SUBSTITUIVEIS:
+        if chave in variante:
+            saida[chave] = variante[chave]
+    return saida
+
+
 def candidato_de_dict(d: dict) -> Candidato:
     pessoal = d.get("pessoal") if isinstance(d.get("pessoal"), dict) else {}
     links = d.get("links") if isinstance(d.get("links"), dict) else {}
@@ -165,15 +188,62 @@ def candidato_de_dict(d: dict) -> Candidato:
                 descricao=_texto(p.get("descricao")),
                 link=_texto(p.get("link")),
                 tecnologias=_lista(p.get("tecnologias"), separar_virgula=True),
+                organizacao=_texto(p.get("organizacao")),
+                periodo=_texto(p.get("periodo")),
+                itens=_lista(p.get("itens")),
+                ia=bool(p.get("ia")),
             )
             for p in _dicts(d.get("projetos"))
         ],
         formacao=[
-            Formacao(curso=_texto(f.get("curso")), instituicao=_texto(f.get("instituicao")), periodo=_texto(f.get("periodo")))
+            Formacao(curso=_texto(f.get("curso")), instituicao=_texto(f.get("instituicao")),
+                     periodo=_texto(f.get("periodo")), detalhe=_texto(f.get("detalhe")))
             for f in _dicts(d.get("formacao"))
         ],
         certificacoes=_lista(d.get("certificacoes")),
         idiomas=_lista(d.get("idiomas")),
         preferencias=d.get("preferencias") if isinstance(d.get("preferencias"), dict) else {},
         assinatura_email=_texto(d.get("assinatura_email")),
+        variantes={
+            _texto(nome): candidato_de_dict(_mesclar_variante(d, v))
+            for nome, v in (d.get("variantes") or {}).items()
+            if isinstance(v, dict)
+        } if isinstance(d.get("variantes"), dict) else {},
     )
+
+
+def salvar_preferencias(novas: dict, caminho: Path | str | None = None) -> None:
+    """Grava `preferencias` (área, cargos, termos, fontes) no YAML do perfil,
+    mantendo o resto do arquivo e o cabeçalho de comentários; guarda .bak."""
+    caminho = Path(caminho) if caminho else config.PERFIL_PATH
+    texto = caminho.read_text(encoding="utf-8")
+    dados = yaml.safe_load(texto) or {}
+    if not isinstance(dados, dict):
+        raise PerfilInvalido(f"{caminho.name} precisa ser um mapa (pessoal:, habilidades:, ...).")
+    prefs = dados.get("preferencias") if isinstance(dados.get("preferencias"), dict) else {}
+    prefs.update(novas)
+    dados["preferencias"] = prefs
+    cabecalho = ""
+    for linha in texto.splitlines():  # só os comentários do topo
+        if not linha.startswith("#"):
+            break
+        cabecalho += linha + "\n"
+    caminho.with_suffix(".yaml.bak").write_text(texto, encoding="utf-8")
+    caminho.write_text(cabecalho + yaml.dump(dados, Dumper=_DumperSemApelidos, allow_unicode=True,
+                                             sort_keys=False, width=110), encoding="utf-8")
+
+
+class _DumperSemApelidos(yaml.SafeDumper):
+    """Sem "&id001"/"*id001" no arquivo: listas repetidas saem por extenso (mais fácil de editar à mão)."""
+
+    def ignore_aliases(self, data):
+        return True
+
+
+def nome_do_perfil(caminho: Path) -> str:
+    """Nome da pessoa no YAML (para o seletor de perfis), sem validar o resto."""
+    try:
+        dados = yaml.safe_load(caminho.read_text(encoding="utf-8")) or {}
+        return str((dados.get("pessoal") or {}).get("nome") or "").strip()
+    except (OSError, yaml.YAMLError, AttributeError):
+        return ""

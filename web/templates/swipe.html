@@ -30,6 +30,23 @@
   .vazio { text-align: center; padding: 70px 20px; }
   .email-tag { font-size: 12.5px; font-weight: 700; color: var(--ok); }
   .dica { text-align: center; font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+  .filtros { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; padding: 12px 14px; margin: -4px 0 16px; }
+  .filtros .campo { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+  .filtros select, .filtros input[type=text] { padding: 7px 9px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; font-size: 13.5px; min-width: 120px; }
+  .filtros input[type=text] { width: 190px; }
+  .toggles { display: flex; gap: 6px; }
+  .toggles label { margin: 0; display: flex; align-items: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 99px; cursor: pointer; font-size: 13px; color: var(--ink); font-weight: 500; }
+  .toggles input { width: auto; margin: 0; }
+  .toggles label:has(input:checked) { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+  .filtros .resumo { margin-left: auto; font-size: 13.5px; color: var(--ink); display: flex; gap: 10px; align-items: center; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--line); color: var(--ink); }
+  @media (max-width: 600px) {
+    .filtros { padding: 10px; gap: 8px; }
+    .filtros .campo { flex: 1 1 45%; }
+    .filtros select, .filtros input[type=text] { width: 100%; min-width: 0; }
+    .filtros .resumo { margin-left: 0; width: 100%; justify-content: space-between; }
+  }
 </style>
 {% endblock %}
 {% block corpo %}
@@ -37,7 +54,29 @@
   <button class="btn primary" data-trava onclick="importar()">🔄 Buscar vagas novas</button>
   <button class="btn" data-trava onclick="enriquecer()" title="Baixa a descrição completa das melhores vagas para achar e-mail">✉️ Procurar e-mails</button>
   <span class="sp"></span>
-  <label style="margin:0;display:flex;gap:6px;align-items:center;font-size:13.5px"><input type="checkbox" id="soEmail" style="width:auto" onchange="this.blur(); recarregar()"> só com e-mail</label>
+  <button class="btn" id="btnFiltros" onclick="alternarFiltros()" aria-expanded="true" aria-controls="filtros">⚙️ Filtros</button>
+</div>
+
+<div class="card filtros" id="filtros" role="search" aria-label="Filtros de vagas">
+  <div class="campo"><label for="fPais" style="margin:0">País</label>
+    <select id="fPais"><option value="">Todos</option><option value="brasil">🇧🇷 Brasil</option><option value="exterior">🌎 Exterior</option></select></div>
+  <div class="campo"><label for="fIdioma" style="margin:0">Idioma da vaga</label>
+    <select id="fIdioma"><option value="">Todos</option><option value="pt">Português</option><option value="en">Inglês</option><option value="es">Espanhol</option></select></div>
+  <div class="campo"><span>Modalidade</span>
+    <div class="toggles">
+      <label><input type="checkbox" name="fMod" value="remoto"> Remoto</label>
+      <label><input type="checkbox" name="fMod" value="hibrido"> Híbrido</label>
+      <label><input type="checkbox" name="fMod" value="presencial"> Presencial</label>
+    </div></div>
+  <div class="campo"><label for="fRegiao" style="margin:0">Região (Brasil)</label>
+    <select id="fRegiao"><option value="">Todas</option><option value="Norte">Norte</option><option value="Nordeste">Nordeste</option><option value="Centro-Oeste">Centro-Oeste</option><option value="Sudeste">Sudeste</option><option value="Sul">Sul</option></select></div>
+  <div class="campo"><label for="fLocal" style="margin:0">Localização</label>
+    <input type="text" id="fLocal" list="sugLocal" placeholder="cidade, UF ou país (ex.: udia, BH, Espanha)" autocomplete="off">
+    <datalist id="sugLocal"></datalist>
+    <span id="entendi" style="font-weight:500;font-size:12px;min-height:15px"></span></div>
+  <div class="campo"><span>&nbsp;</span>
+    <div class="toggles"><label><input type="checkbox" id="soEmail"> só com e-mail</label></div></div>
+  <div class="resumo"><span id="totalFiltro" aria-live="polite"></span><button class="btn" type="button" onclick="limparFiltros()">Limpar</button></div>
 </div>
 
 <div class="palco" id="palco"></div>
@@ -54,14 +93,97 @@ let fila = [], historico = [];
 const esc = s => (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const cor = s => s >= 70 ? 'var(--ok)' : s >= 45 ? 'var(--warn)' : 'var(--no)';
 
+const CHAVE_FILTROS = 'jobradar.filtros';
+const ROTULO = { pais: { brasil: '🇧🇷 Brasil', exterior: '🌎 Exterior' }, idioma: { pt: 'PT', en: 'EN', es: 'ES' },
+                 modalidade: { remoto: 'Remoto', hibrido: 'Híbrido', presencial: 'Presencial' } };
+
+function lerFiltros() {
+  return {
+    pais: document.getElementById('fPais').value, idioma: document.getElementById('fIdioma').value,
+    modalidade: [...document.querySelectorAll('input[name=fMod]:checked')].map(i => i.value).join(','),
+    regiao: document.getElementById('fRegiao').value, local: document.getElementById('fLocal').value.trim(),
+    email: document.getElementById('soEmail').checked ? '1' : '',
+  };
+}
+function aplicarFiltrosSalvos() {
+  let f = {};
+  try { f = JSON.parse(localStorage.getItem(CHAVE_FILTROS) || '{}'); } catch (e) { f = {}; }
+  document.getElementById('fPais').value = f.pais || '';
+  document.getElementById('fIdioma').value = f.idioma || '';
+  document.getElementById('fRegiao').value = f.regiao || '';
+  document.getElementById('fLocal').value = f.local || '';
+  document.getElementById('soEmail').checked = f.email === '1';
+  const mods = (f.modalidade || '').split(',');
+  document.querySelectorAll('input[name=fMod]').forEach(i => i.checked = mods.includes(i.value));
+  let fechado = null;
+  try { fechado = localStorage.getItem(CHAVE_FILTROS + '.fechado'); } catch (e) {}
+  // No celular o painel começa fechado (ocupa a tela toda); depois vale a sua escolha.
+  if (fechado === '1' || (fechado === null && matchMedia('(max-width: 600px)').matches)) alternarFiltros();
+}
+function consulta() {
+  const f = lerFiltros();
+  try { localStorage.setItem(CHAVE_FILTROS, JSON.stringify(f)); } catch (e) {}
+  document.getElementById('fRegiao').disabled = f.pais === 'exterior';
+  return new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
+}
+async function atualizarTotal(q, meu) {
+  try {
+    const r = await (await fetch('/api/filtros?' + q)).json();
+    if (meu !== carregando) return;  // resposta de um filtro antigo
+    document.getElementById('totalFiltro').innerHTML = `<b>${r.total}</b> de ${r.novas} vagas`;
+    const local = new URLSearchParams(q).get('local') || '';  // o local DESTA consulta, não o que está no campo agora
+    document.getElementById('entendi').textContent = !local ? ''
+      : r.lugar ? '📍 Entendi: ' + r.lugar.rotulo : '🔎 Não reconheci o lugar — procurando o texto no anúncio';
+    const c = r.contagem;
+    const rot = (sel, campo) => document.querySelectorAll(`#${sel} option`).forEach(o => {
+      if (!o.value) return;
+      o.textContent = o.textContent.replace(/ \(\d+\)$/, '') + ` (${c[campo][o.value] || 0})`;
+    });
+    rot('fPais', 'pais'); rot('fIdioma', 'idioma'); rot('fRegiao', 'regiao');
+  } catch (e) { /* contador é só informativo */ }
+}
+function alternarFiltros() {
+  const p = document.getElementById('filtros'), b = document.getElementById('btnFiltros');
+  const fechar = p.style.display !== 'none';
+  p.style.display = fechar ? 'none' : '';
+  b.setAttribute('aria-expanded', String(!fechar));
+  try { localStorage.setItem(CHAVE_FILTROS + '.fechado', fechar ? '1' : '0'); } catch (e) {}
+}
+function limparFiltros() {
+  ['fPais', 'fIdioma', 'fRegiao', 'fLocal'].forEach(id => document.getElementById(id).value = '');
+  document.querySelectorAll('#filtros input[type=checkbox]').forEach(i => i.checked = false);
+  recarregar();
+}
+let carregando = 0;
 async function carregar() {
-  const filtro = document.getElementById('soEmail').checked ? 'email' : '';
+  const q = consulta(), meu = ++carregando;
   const ids = new Set(fila.map(v => v.id));
-  const novas = await (await fetch('/api/proximas?n=6&filtro=' + filtro)).json();
+  const novas = await (await fetch('/api/proximas?n=6&' + q)).json();
+  if (meu !== carregando) return;  // filtro mudou no meio: descarta resposta velha
   novas.forEach(v => { if (!ids.has(v.id)) fila.push(v); });
   render();
+  atualizarTotal(q, meu);
 }
 function recarregar() { fila = []; carregar(); }
+let espera;
+document.addEventListener('change', e => { if (e.target.closest('#filtros')) { e.target.blur && e.target.type === 'checkbox' && e.target.blur(); recarregar(); } });
+let esperaSug;
+async function sugerirLocal(q) {
+  const lista = document.getElementById('sugLocal');
+  if (q.length < 2) { lista.innerHTML = ''; return; }
+  try {
+    const sug = await (await fetch('/api/localidades?q=' + encodeURIComponent(q))).json();
+    lista.innerHTML = sug.map(s => `<option value="${esc(s.rotulo)}"></option>`).join('');
+  } catch (e) { /* sugestão é só ajuda */ }
+}
+document.addEventListener('input', e => {
+  if (e.target.id !== 'fLocal') return;
+  carregando++;  // respostas de antes de digitar não valem mais
+  document.getElementById('entendi').textContent = '';
+  clearTimeout(espera); clearTimeout(esperaSug);
+  esperaSug = setTimeout(() => sugerirLocal(e.target.value.trim()), 150);
+  espera = setTimeout(recarregar, 400);
+});
 // Descrições do GitHub vêm em Markdown: mostra como texto limpo.
 const limparMarkdown = t => (t || '').replace(/^#{1,6}\s*/gm, '').replace(/\*\*(.*?)\*\*/g, '$1').replace(/^\s*[-*]\s+/gm, '• ').replace(/\[(.*?)\]\((.*?)\)/g, '$1');
 
@@ -71,8 +193,9 @@ function render() {
   document.getElementById('acoes').style.visibility = fila.length ? 'visible' : 'hidden';
   document.getElementById('dica').style.visibility = fila.length ? 'visible' : 'hidden';
   if (!fila.length) {
-    palco.innerHTML = document.getElementById('soEmail').checked
-      ? `<div class="card vazio"><h2>Nenhuma vaga com e-mail agora</h2><p class="muted">Desmarque <b>só com e-mail</b> para ver todas, ou clique em <b>Procurar e-mails</b> para baixar a descrição das melhores vagas.</p></div>`
+    const comFiltro = Object.values(lerFiltros()).some(Boolean);
+    palco.innerHTML = comFiltro
+      ? `<div class="card vazio"><h2>Nenhuma vaga com esses filtros</h2><p class="muted">Afrouxe algum filtro ou clique em <b>Limpar</b>. Para achar mais vagas com e-mail, use <b>Procurar e-mails</b>.</p></div>`
       : `<div class="card vazio"><h2>Nada novo por aqui 🎉</h2><p class="muted">Clique em <b>Buscar vagas novas</b> para rodar o radar + GitHub + Remotar.</p></div>`;
     return;
   }
@@ -84,6 +207,7 @@ function render() {
       <div class="selo sim">QUERO</div><div class="selo nao">NÃO</div>
       <div class="emp">${esc(v.empresa) || 'Empresa não informada'} ${v.email ? '<span class="email-tag">· ✉ ' + esc(v.email) + '</span>' : ''}</div>
       <h2>${esc(v.titulo)}</h2>
+      ${etiquetas({ ...v.classificacao, foco: v.foco })}
       <div class="meta">${[...new Set([v.modalidade, v.local, v.site, v.publicado_em].filter(Boolean))].map(esc).join(' · ')}</div>
       <div class="score"><b style="color:${cor(v.score)}">${v.score}% compatível</b><div class="barra"><i style="width:${v.score}%;background:${cor(v.score)}"></i></div></div>
       <div>${v.em_comum.map(t => `<span class="chip">✓ ${esc(t)}</span>`).join('')}${v.faltando.slice(0, 6).map(t => `<span class="chip miss">${esc(t)}</span>`).join('')}</div>
@@ -92,6 +216,17 @@ function render() {
     if (i === arr.length - 1) arrastavel(el);
     palco.appendChild(el);
   });
+}
+
+function etiquetas(c) {
+  if (!c) return '';
+  const t = [];
+  if (c.foco) t.push('⭐ Sua cidade');
+  if (c.pais !== 'indefinido') t.push(c.pais === 'brasil' ? '🇧🇷 Brasil' : '🌎 ' + (c.pais_nome || 'Exterior'));
+  if (c.uf) t.push((c.cidade ? c.cidade + ' - ' : '') + c.uf + (c.regiao ? ' · ' + c.regiao : ''));
+  if (c.modalidade !== 'indefinido') t.push(ROTULO.modalidade[c.modalidade]);
+  if (c.idioma !== 'indefinido') t.push('Idioma: ' + ROTULO.idioma[c.idioma]);
+  return `<div class="tags">${t.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>`;
 }
 
 function arrastavel(el) {
@@ -140,11 +275,12 @@ function esperar() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.target.matches && e.target.matches('input[type=text], input[type=number], input:not([type]), textarea')) return;
+  if (e.target.matches && e.target.matches('input[type=text], input[type=number], input:not([type]), textarea, select')) return;
   if (e.key === 'ArrowRight') decidir('curtir');
   if (e.key === 'ArrowLeft') decidir('descartar');
   if (e.key === 'Backspace') { e.preventDefault(); desfazer(); }
 });
+aplicarFiltrosSalvos();
 carregar();
 </script>
 {% endblock %}

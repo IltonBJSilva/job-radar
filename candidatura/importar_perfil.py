@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import unicodedata
 import zipfile
 
 import requests
@@ -38,6 +39,25 @@ class ErroImportacao(ValueError):
 
 # ------------------------------------------------------------ arquivos
 
+_ACENTOS_SOLTOS = {"´": "́", "ˆ": "̂", "˜": "̃", "`": "̀", "¨": "̈"}
+
+
+def corrigir_acentos_latex(texto: str) -> str:
+    """PDF gerado pelo LaTeX/Overleaf sai com o acento separado da letra:
+    "J ´unior", "experiˆencia", "automa¸c˜ao", "FORMAC¸ ˜AO", "Ass´ıncrono".
+    Junta de volta: "Júnior", "experiência", "automação", "FORMAÇÃO", "Assíncrono"."""
+    acentos = "".join(_ACENTOS_SOLTOS)
+    # Espaço que o extrator põe antes do acento, no meio da palavra ("J ´unior", "FORMAC¸ ˜AO").
+    # Só no meio da palavra: "`a experiência" é a crase sozinha e mantém o espaço.
+    texto = re.sub(rf"(\w¸?) ([{acentos}])(?=[A-Za-zı]\w)", r"\1\2", texto)
+    texto = re.sub(r"([cC])¸|¸([cC])", lambda m: "ç" if (m.group(1) or m.group(2)) == "c" else "Ç", texto)
+    return re.sub(
+        rf"([{acentos}])([A-Za-zı])",
+        lambda m: unicodedata.normalize("NFC", ("i" if m.group(2) == "ı" else m.group(2)) + _ACENTOS_SOLTOS[m.group(1)]),
+        texto,
+    )
+
+
 def texto_de_arquivo(nome: str, dados: bytes) -> str:
     """Texto de .pdf, .docx, .txt ou .md."""
     nome = (nome or "").lower()
@@ -50,7 +70,7 @@ def texto_de_arquivo(nome: str, dados: bytes) -> str:
                 "(ou cole o texto do currículo no campo de texto)."
             ) from e
         leitor = PdfReader(io.BytesIO(dados))
-        return "\n".join((p.extract_text() or "") for p in leitor.pages).strip()
+        return corrigir_acentos_latex("\n".join((p.extract_text() or "") for p in leitor.pages)).strip()
     if nome.endswith(".docx"):
         try:
             with zipfile.ZipFile(io.BytesIO(dados)) as z:
@@ -395,9 +415,10 @@ def montar_perfil(texto_cv: str = "", github: str = "", linkedin_url: str = "", 
         techs += [t for t in (e.get("tecnologias") or []) if isinstance(t, str)]
 
     nome = _primeira(lido.get("nome"), pessoal_base.get("nome"), gh.get("nome"))
-    titulo = _primeira(lido.get("titulo"), pessoal_base.get("titulo"))
-    if not titulo and techs:
-        titulo = "Desenvolvedor | " + " • ".join(list(dict.fromkeys(techs))[:3])
+    titulo = _primeira(lido.get("titulo"), pessoal_base.get("titulo"),
+                       titulo_do_texto(_primeira(lido.get("resumo"), gh.get("bio")), experiencias))
+    if not titulo and techs:  # sem resumo nem cargo: neutro, sem supor que a pessoa é dev
+        titulo = "Profissional de Tecnologia | " + " • ".join(list(dict.fromkeys(techs))[:3])
 
     perfil = {
         "pessoal": {
@@ -405,7 +426,8 @@ def montar_perfil(texto_cv: str = "", github: str = "", linkedin_url: str = "", 
             "titulo": titulo,
             "email": _primeira(contatos.get("email"), pessoal_base.get("email")),
             "telefone": _primeira(contatos.get("telefone"), pessoal_base.get("telefone")),
-            "cidade": _primeira(lido.get("cidade"), pessoal_base.get("cidade"), gh.get("cidade")),
+            "cidade": _primeira(lido.get("cidade"), pessoal_base.get("cidade"), cidade_do_topo(texto_cv),
+                                gh.get("cidade")),
         },
         "links": links,
         "resumo": _primeira(lido.get("resumo"), gh.get("bio")),
@@ -421,9 +443,10 @@ def montar_perfil(texto_cv: str = "", github: str = "", linkedin_url: str = "", 
     if (base.get("pessoal") or {}).get("email") == EXEMPLO_EMAIL or not prefs:
         papel = titulo.split("|")[0].strip().lower()
         prefs = {
-            "cargos_alvo": list(dict.fromkeys([p for p in [papel, *principais] if p])) or ["desenvolvedor"],
+            "cargos_alvo": list(dict.fromkeys([p for p in [papel, *principais] if p])),
             "senioridade": "Pleno",
-            "termos_remotar": principais or ["desenvolvedor"],
+            # Busca pelo cargo (o que a pessoa digitaria num site de vagas), não pelas ferramentas.
+            "termos_busca": [papel] if papel else principais,
             "modalidade": "Remoto ou híbrido",
             "pretensao": "",
             "disponibilidade": "imediata",
@@ -433,6 +456,42 @@ def montar_perfil(texto_cv: str = "", github: str = "", linkedin_url: str = "", 
                   " · ".join(re.sub(r"^https?://(www\.)?", "", v) for v in links.values())]
     perfil["assinatura_email"] = "\n".join(x for x in assinatura if x)
     return perfil
+
+
+_PAPEL = re.compile(
+    r"^\s*((?:analista|engenheir[oa]|desenvolvedor[a]?|especialista|t[eé]cnic[oa]|coordenador[a]?|gerente|"
+    r"cientista|arquitet[oa]|designer|consultor[a]?|administrador[a]?|programador[a]?|product|scrum|"
+    r"software|data|security|devops|qa|estagi[aá]ri[oa]|estudante|graduand[oa])\b[^,.;:\n]*?)"
+    r"(?=\s+(?:com|que|h[aá]|atuando|focad[oa]|experiente)\b|[,.;:\n]|$)",
+    re.I,
+)
+
+
+def titulo_do_texto(resumo: str, experiencias: list[dict]) -> str:
+    """Papel da pessoa sem chutar área: o começo do resumo ("Analista de Segurança da
+    Informação com 3 anos..." -> "Analista de Segurança da Informação") ou o cargo mais recente."""
+    m = _PAPEL.match(resumo or "")
+    if m and 2 <= len(m.group(1).split()) <= 8:
+        return m.group(1).strip()
+    for e in experiencias:
+        cargo = re.sub(r"\s+(j[uú]nior|pleno|s[eê]nior|jr\.?|pl|sr\.?)$", "", str(e.get("cargo") or ""), flags=re.I).strip()
+        if cargo and len(cargo.split()) <= 8 and not re.search(r"\d", cargo):
+            return cargo
+    return ""
+
+
+def cidade_do_topo(texto: str) -> str:
+    """Cidade no cabeçalho do currículo ("... | Belo Horizonte - MG"), pela base do IBGE."""
+    from candidatura import localidades
+
+    for linha in (texto or "").splitlines()[:8]:
+        for pedaco in re.split(r"[|•·⋄]", linha):
+            if "@" in pedaco or re.search(r"\d{4}", pedaco) or "http" in pedaco or ".com" in pedaco:
+                continue
+            achado = localidades.extrair(pedaco)
+            if achado["cidade"] and achado["uf"]:
+                return f"{achado['cidade']} - {achado['uf']}"
+    return ""
 
 
 def perfil_para_yaml(perfil: dict) -> str:

@@ -283,6 +283,10 @@ def test_preparo_espontaneo_nao_baixa_site_nem_usa_contato(banco, monkeypatch):
         def gerar(self, html, destino):
             destino.write_bytes(b"%PDF-falso")
 
+        def gerar_curriculo(self, curriculo, destino):
+            self.gerar("<html></html>", destino)
+            return "<html></html>", 2
+
     candidato = candidato_de_dict(PERFIL)
     repositorio.inserir({"id": "esp1", "titulo": "Dev Backend", "empresa": "Acme", "link": "https://acme.com.br",
                          "origem": "espontanea", "status": "curtida", "emails_encontrados": ["contato@acme.com.br"]})

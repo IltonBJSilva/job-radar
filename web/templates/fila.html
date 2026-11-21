@@ -14,6 +14,11 @@
   .acs .btn { padding: 6px 10px; font-size: 13px; }
   .erro { color: var(--no); font-size: 12.5px; }
   @media (max-width: 720px) { .esconder { display: none; } td, th { padding: 9px 6px; } }
+  .subabas { display: flex; gap: 8px; margin: 0 0 14px; flex-wrap: wrap; }
+  .subabas a { text-decoration: none; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); font-weight: 600; font-size: 14px; }
+  .subabas a.on { background: var(--chip); color: var(--chip-ink); border-color: transparent; }
+  .check { font-size: 18px; width: 28px; text-align: center; }
+  .aviso-dup { color: var(--warn); font-size: 12.5px; font-weight: 600; }
 </style>
 {% endblock %}
 {% block corpo %}
@@ -25,37 +30,48 @@
 </div>
 
 {% if aba == 'pronta' %}
+<nav class="subabas" aria-label="Prontas">
+  <a href="/fila?aba=pronta&ver=falta" class="{{ 'on' if ver == 'falta' }}">📤 Falta enviar <span class="badge">{{ n_falta }}</span></a>
+  <a href="/fila?aba=pronta&ver=enviadas" class="{{ 'on' if ver == 'enviadas' }}">✅ Já enviadas <span class="badge">{{ n_enviadas_email }}</span></a>
+</nav>
+{% endif %}
+{% if aba == 'pronta' and ver == 'falta' %}
 <div class="barra-acoes">
   <label for="lim" style="margin:0;display:flex;align-items:center;gap:6px">Quantas: <input id="lim" type="number" value="10" min="1" max="{{ limite }}" style="width:70px;padding:6px 8px"></label>
   <button class="btn primary" data-trava onclick="lote()">🚀 Enviar prontas</button>
   <span class="muted" style="font-size:13px">{{ 'Envio REAL com intervalo aleatório entre e-mails.' if envio_real else 'Modo simulação: gera .eml na pasta saida/ — nada é enviado.' }}</span>
 </div>
 {% elif aba == 'manual' %}
-<p class="muted">Essas vagas não têm e-mail. O currículo adaptado já está pronto: abra o anúncio, candidate-se pelo site anexando o PDF — ou cole um e-mail na vaga para virar "pronta".</p>
+<p class="muted">Essas vagas não têm e-mail. O currículo adaptado já está pronto: abra o anúncio (↗), candidate-se pelo site anexando o PDF e clique em <b>✓ Candidatei</b> — a vaga vai para <b>Enviadas</b>. Ou cole um e-mail na vaga para virar "pronta".</p>
 {% endif %}
 
 <div class="card" style="overflow:auto">
 <table>
-  <tr><th>Vaga</th><th class="esconder">E-mail</th><th>%</th><th>Ações</th></tr>
+  <tr>{% if aba == 'pronta' %}<th class="check" aria-label="Enviada?"></th>{% endif %}<th>Vaga</th><th class="esconder">E-mail</th><th>%</th><th>Ações</th></tr>
   {% for v in vagas %}
   <tr id="l-{{ v.id }}">
+    {% if aba == 'pronta' %}<td class="check" id="c-{{ v.id }}" title="{{ 'Enviada' if v.status == 'enviada' else 'Falta enviar' }}">{{ '✅' if v.status == 'enviada' else ('⏳' if v.status == 'curtida' else '⬜') }}</td>{% endif %}
     <td><a class="t" href="/vaga/{{ v.id }}" style="color:inherit;text-decoration:none">{{ v.titulo }}</a><br>
-      <span class="muted">{{ v.empresa or '—' }} · {{ v.site }}{% if v.enviada_em %} · {{ 'simulada' if v.simulado else 'enviada' }} em {{ v.enviada_em[:16].replace('T',' ') }}{% endif %}</span>
+      <span class="muted">{{ v.empresa or '—' }} · {{ v.site }}{% if v.enviada_em %} · {{ 'simulada' if v.simulado else 'enviada' }} em {{ v.enviada_em[:16].replace('T',' ') }}{% endif %}{% if v.status == 'aplicada' and v.aplicada_em %} · <b style="color:var(--ok)">✓ candidatura pelo site</b> em {{ v.aplicada_em[:16].replace('T',' ') }}{% endif %}</span>
       {% if v.status == 'curtida' %}<br><span class="muted">⏳ preparando…</span>{% endif %}
       {% if v.erro %}<div class="erro">{{ v.erro }}</div>{% endif %}
+      {% if v.ja_contatado %}<div class="aviso-dup">⚠ Você já mandou para este e-mail/empresa nos últimos {{ dias_repetir }} dias — o sistema não envia de novo.</div>{% endif %}
       {% if v.resposta_resumo %}<div style="color:var(--ok);font-size:13px">↩ {{ v.resposta_resumo }}</div>{% endif %}
     </td>
     <td class="esconder">{{ v.email_destino or '—' }}</td>
     <td><b>{{ v.score or 0 }}</b></td>
     <td class="acs">
       {% if v.cv_path %}<a class="btn" href="/arquivo/{{ v.id }}/cv" target="_blank">CV</a> <a class="btn" href="/arquivo/{{ v.id }}/carta" target="_blank">Carta</a>{% endif %}
-      {% if v.status == 'pronta' %}<button class="btn ok" onclick="enviar('{{ v.id }}', this)">Enviar</button>{% endif %}
+      {% if v.status == 'pronta' and v.ja_contatado %}<button class="btn" onclick="descartar('{{ v.id }}', this)" title="Já foi enviado para esta empresa: tira da lista">Descartar</button>
+      {% elif v.status == 'pronta' %}<button class="btn ok" onclick="enviar('{{ v.id }}', this)">Enviar</button>{% endif %}
+      {% if v.status == 'manual' %}<button class="btn ok" onclick="aplicada('{{ v.id }}', true, this)" title="Marque depois de se candidatar pelo site da empresa">✓ Candidatei</button>{% endif %}
+      {% if v.status == 'aplicada' %}<button class="btn" onclick="aplicada('{{ v.id }}', false, this)" title="Volta para Sem e-mail">Desmarcar</button>{% endif %}
       {% if v.status in ('erro', 'curtida') %}<button class="btn" onclick="preparar('{{ v.id }}', this)">Refazer</button>{% endif %}
       {% if v.link | link_seguro %}<a class="btn" href="{{ v.link | link_seguro }}" target="_blank" rel="noopener">↗</a>{% endif %}
     </td>
   </tr>
   {% else %}
-  <tr><td colspan="4" class="muted" style="text-align:center;padding:40px">Nada aqui ainda. Curta vagas na aba <a href="/">Descobrir</a>.</td></tr>
+  <tr><td colspan="5" class="muted" style="text-align:center;padding:40px">{% if aba == 'pronta' and ver == 'falta' %}Nada falta enviar 🎉{% elif ver == 'enviadas' %}Nenhuma candidatura enviada por e-mail ainda.{% else %}Nada aqui ainda. Curta vagas na aba <a href="/">Descobrir</a>.{% endif %}</td></tr>
   {% endfor %}
 </table>
 </div>
@@ -65,8 +81,26 @@
 async function enviar(id, b) {
   {% if envio_real %}if (!confirm('Enviar esta candidatura AGORA, de verdade?')) return;{% endif %}
   b.disabled = true;
-  try { const r = await post('/api/enviar/' + id); toast(r.simulado ? 'Simulado: .eml salvo na pasta da vaga' : '✅ Enviado!'); document.getElementById('l-' + id).style.opacity = .35; }
+  try {
+    const r = await post('/api/enviar/' + id);
+    toast(r.simulado ? 'Simulado: .eml salvo na pasta da vaga' : '✅ Enviado!');
+    const c = document.getElementById('c-' + id); if (c) { c.textContent = '✅'; c.title = 'Enviada'; }
+    b.replaceWith(Object.assign(document.createElement('b'), { textContent: r.simulado ? 'Simulada' : 'Enviada ✓', style: 'color:var(--ok)' }));
+  }
   catch (e) { toast('Não enviado: ' + e.message, 5000); b.disabled = false; }
+}
+async function descartar(id, b) {
+  b.disabled = true;
+  try { await post('/api/decidir/' + id, { acao: 'descartar' }); document.getElementById('l-' + id).remove(); toast('Descartada'); }
+  catch (e) { toast('Erro: ' + e.message, 5000); b.disabled = false; }
+}
+async function aplicada(id, feito, b) {
+  b.disabled = true;
+  try {
+    await post('/api/aplicada/' + id, { feito });
+    toast(feito ? '✓ Marcada como candidatura feita pelo site' : 'Desmarcada — voltou para "Sem e-mail"');
+    document.getElementById('l-' + id).style.opacity = .35;
+  } catch (e) { toast('Erro: ' + e.message, 5000); b.disabled = false; }
 }
 async function preparar(id, b) { b.disabled = true; await post('/api/preparar/' + id); toast('Preparando…'); setTimeout(() => location.reload(), 4000); }
 async function lote() {

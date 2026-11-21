@@ -11,12 +11,13 @@ from __future__ import annotations
 import queue
 import threading
 import traceback
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, url_for
 
-from candidatura import config, empresas, importar_perfil, repositorio, servico
+from candidatura import config, empresas, importar_perfil, localizacao, repositorio, servico
 from candidatura.contato import email_valido, extrair_emails
 from candidatura.compatibilidade import analisar
 from candidatura.perfil import PerfilInvalido, PerfilNaoEncontrado, carregar_candidato
@@ -94,9 +95,14 @@ def criar_app() -> Flask:
         return None
     trabalhador = Trabalhador()
 
-    # Vagas curtidas que não terminaram de preparar (app fechado no meio).
-    for pendente in repositorio.listar("curtida", limite=500):
-        trabalhador.agendar(f"Preparando {pendente['titulo'][:40]}", servico.preparar, pendente["id"])
+    def retomar_curtidas():
+        """Vagas curtidas que não terminaram (app fechado ou perfil trocado no meio).
+        Com o coração configurado para enviar, retomam o ENVIO — não só o preparo."""
+        tarefa = servico.preparar_e_enviar if config.ENVIAR_AO_CURTIR else servico.preparar
+        for pendente in repositorio.listar("curtida", limite=500):
+            trabalhador.agendar(f"Preparando {pendente['titulo'][:40]}", tarefa, pendente["id"])
+
+    retomar_curtidas()
 
     erro_perfil = {"msg": ""}
 
@@ -124,12 +130,41 @@ def criar_app() -> Flask:
             "descricao": desc[:1800] + ("…" if len(desc) > 1800 else ""),
         }
 
-    def proximas(n: int = 3, filtro: str = "") -> list[dict]:
-        if filtro == "email":
-            vagas = [v for v in repositorio.listar("nova", limite=10000) if v.get("email_destino")]
-        else:
-            vagas = repositorio.listar("nova", limite=max(n, 1))
-        return [cartao(v) for v in vagas[:n]]
+    cache_classificacao: dict[tuple, localizacao.Classificacao] = {}
+
+    def classificada(v: dict) -> localizacao.Classificacao:
+        chave = (v["id"], v.get("atualizada_em"))
+        if chave not in cache_classificacao:
+            if len(cache_classificacao) > 50000:
+                cache_classificacao.clear()
+            cache_classificacao[chave] = localizacao.classificar(v)
+        return cache_classificacao[chave]
+
+    def foco_atual() -> dict | None:
+        from candidatura import areas
+
+        c = candidato_ou_none()
+        return areas.foco_regional((c.preferencias or {}) if c else {})
+
+    def no_foco(c: localizacao.Classificacao, foco: dict | None) -> bool:
+        return bool(foco) and localizacao.normalizar(c.cidade) == localizacao.normalizar(foco["cidade"]) and (
+            not foco.get("uf") or c.uf == foco["uf"])
+
+    def filtradas(filtros: localizacao.Filtros) -> list[tuple[dict, localizacao.Classificacao]]:
+        lista = [(v, c) for v in repositorio.listar("nova", limite=100000)
+                 for c in [classificada(v)] if filtros.aceita(v, c)]
+        foco = foco_atual()
+        if foco:  # foco regional ligado: vagas da cidade primeiro (já vêm por nota dentro de cada grupo)
+            lista.sort(key=lambda par: not no_foco(par[1], foco))
+        return lista
+
+    def proximas(n: int = 3, filtros: localizacao.Filtros | None = None) -> list[dict]:
+        filtros = filtros or localizacao.Filtros()
+        saida = []
+        foco = foco_atual()
+        for v, c in filtradas(filtros)[:n]:
+            saida.append({**cartao(v), "classificacao": c.como_dict(), "foco": no_foco(c, foco)})
+        return saida
 
     def inteiro(valor, padrao: int, minimo: int = 1, maximo: int = 500) -> int:
         try:
@@ -141,6 +176,7 @@ def criar_app() -> Flask:
         "nova": "Nova — ainda não avaliada", "descartada": "Descartada", "curtida": "Preparando currículo…",
         "pronta": "Pronta para enviar", "manual": "Sem e-mail — candidate-se pelo site com o PDF",
         "enviando": "Enviando…", "erro": "Erro — veja a mensagem abaixo", "respondida": "A empresa respondeu!",
+        "aplicada": "Candidatura feita pelo site da empresa",
         "encerrada": "Vaga encerrada",
     }
 
@@ -152,6 +188,7 @@ def criar_app() -> Flask:
     @app.context_processor
     def globais():
         return {"envio_real": config.ENVIO_REAL, "contagem": repositorio.contagem_por_status(),
+                "perfis": perfis_disponiveis(), "perfil_ativo": config.PERFIL_ATIVO,
                 "rotulo_status": rotulo_status}
 
     # ------------------------------------------------------------ páginas
@@ -165,6 +202,265 @@ def criar_app() -> Flask:
         if not c or c.email == importar_perfil.EXEMPLO_EMAIL:
             return redirect(url_for("perfil"))  # cadastro único antes de tudo
         return render_template("swipe.html")
+
+
+    # ------------------------------------------------ perfis (várias pessoas)
+
+    def perfis_disponiveis() -> list[dict]:
+        from candidatura.perfil import nome_do_perfil
+
+        saida = []
+        for pid in config.listar_perfis():
+            caminho = config.PERFIL_PATH if pid == config.PERFIL_ATIVO else (
+                config._PADRAO_PRINCIPAL["PERFIL_PATH"] if pid == config.PERFIL_PRINCIPAL
+                else config.pasta_do_perfil(pid) / "candidato.yaml")
+            nome = nome_do_perfil(Path(caminho))
+            if not nome or nome == "Seu Nome":
+                nome = "Perfil principal" if pid == config.PERFIL_PRINCIPAL else pid
+            saida.append({"id": pid, "nome": nome, "ativo": pid == config.PERFIL_ATIVO})
+        return saida
+
+    def trocar_para(perfil_id: str):
+        config.ativar_perfil(perfil_id)
+        repositorio.iniciar()
+        repositorio.liberar_envios_interrompidos()
+        cache_classificacao.clear()
+        retomar_curtidas()
+
+    @app.post("/api/perfil/ativar")
+    def api_perfil_ativar():
+        perfil_id = str((request.get_json(silent=True) or {}).get("id") or "")
+        if perfil_id not in config.listar_perfis():
+            return jsonify({"ok": False, "erro": "Perfil não encontrado."}), 404
+        if trabalhador.estado["ocupado"] or not trabalhador.fila.empty():
+            return jsonify({"ok": False, "erro": "Espere a tarefa atual terminar para trocar de perfil."}), 409
+        trocar_para(perfil_id)
+        return jsonify({"ok": True})
+
+    @app.route("/perfis/novo", methods=["GET", "POST"])
+    def novo_perfil():
+        import re
+        import unicodedata
+
+        aviso = ""
+        if request.method == "POST":
+            nome = (request.form.get("nome") or "").strip()[:60]
+            base = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode().lower()
+            base = re.sub(r"[^a-z0-9]+", "-", base).strip("-")[:30] or "perfil"
+            if base == config.PERFIL_PRINCIPAL:
+                base = "perfil-principal"
+            if not nome:
+                aviso = "Digite o nome da pessoa."
+            elif trabalhador.estado["ocupado"] or not trabalhador.fila.empty():
+                aviso = "Espere a tarefa atual terminar."
+            else:
+                perfil_id, n = base, 2
+                while perfil_id in config.listar_perfis():
+                    perfil_id, n = f"{base}-{n}", n + 1
+                pasta = config.PERFIS_DIR / perfil_id
+                pasta.mkdir(parents=True)
+                (pasta / "config.env").write_text(
+                    "# E-mail desta pessoa (preencha pela página Configurações)\nENVIO_REAL=false\n", encoding="utf-8")
+                trocar_para(perfil_id)
+                return redirect(url_for("perfil"))
+        return render_template("novo_perfil.html", aviso=aviso)
+
+    # ------------------------------------------------ configurações do perfil
+
+    @app.route("/configuracoes", methods=["GET", "POST"])
+    def configuracoes():
+        from candidatura import areas
+        from candidatura.perfil import salvar_preferencias
+
+        c = candidato_ou_none()
+        if not c:
+            return redirect(url_for("perfil"))
+        prefs = c.preferencias or {}
+        aviso = ""
+        if request.method == "POST":
+            def foco_do_formulario() -> dict:
+                from candidatura import localidades
+
+                texto = (request.form.get("foco_cidade") or "").strip()
+                lugar = localidades.resolver(texto) if texto else None
+                cidade, uf = (lugar.nome, lugar.uf) if lugar and lugar.tipo == "cidade" else (texto, "")
+                return {"ativo": bool(request.form.get("foco_ativo")) and bool(cidade), "cidade": cidade, "uf": uf,
+                        "alerta_telegram": bool(request.form.get("alerta_telegram")),
+                        "alerta_limiar": inteiro(request.form.get("alerta_limiar"), 75, minimo=0, maximo=100)}
+
+            def lista(campo):
+                return [x.strip() for x in (request.form.get(campo) or "").replace("\n", ",").split(",") if x.strip()]
+
+            area = request.form.get("area") or "outra"
+            novas = {
+                "area": area if area in areas.AREAS else "outra",
+                "cargos_alvo": lista("cargos_alvo"),
+                "termos_busca": lista("termos_busca"),
+                "termos_extras": lista("termos_extras"),
+                "fontes": [f for f in request.form.getlist("fontes") if f in areas.FONTES],
+                "senioridade": request.form.get("senioridade") or prefs.get("senioridade") or "",
+                "modalidade": (request.form.get("modalidade") or "").strip(),
+                "foco_regional": foco_do_formulario(),
+            }
+            email = (request.form.get("smtp_usuario") or "").strip()
+            if email and not email_valido(email):
+                aviso = f"E-mail inválido: {email}"
+            elif not novas["termos_busca"]:
+                aviso = "Informe pelo menos um termo de busca (ex.: o nome do cargo que você procura)."
+            else:
+                salvar_preferencias(novas)
+                valores = {
+                    "SMTP_USUARIO": email,
+                    "ENVIO_REAL": "true" if request.form.get("envio_real") and email else "false",
+                    "ENVIAR_AO_CURTIR": "true" if request.form.get("enviar_ao_curtir") else "false",
+                    "EMAIL_COPIA_PARA_MIM": "true" if request.form.get("copia") else "false",
+                }
+                senha = (request.form.get("smtp_senha") or "").replace(" ", "")
+                if senha:  # em branco = mantém a senha que já estava salva
+                    valores["SMTP_SENHA"] = senha
+                if email.lower().endswith(("@gmail.com", "@googlemail.com")):
+                    valores.update(SMTP_HOST="smtp.gmail.com", SMTP_PORTA="587")
+                config.gravar_config_perfil(config.PERFIL_ATIVO, valores)
+                chaves = {"IA_NO_RESUMO": "true" if request.form.get("ia_no_resumo") else "false"}
+                for campo, nome in (("ia_api_key", "IA_API_KEY"), ("tavily_api_key", "TAVILY_API_KEY"),
+                                    ("brave_api_key", "BRAVE_API_KEY"),
+                                    ("hunter_api_key", "HUNTER_API_KEY")):
+                    valor = (request.form.get(campo) or "").strip()
+                    if valor == "-":  # "-" apaga a chave
+                        chaves[nome] = ""
+                    elif valor:
+                        chaves[nome] = valor
+                if chaves.get("IA_API_KEY"):
+                    chaves["IA_PROVEDOR"] = "groq"
+                elif chaves.get("IA_API_KEY") == "":
+                    chaves["IA_PROVEDOR"] = ""
+                config.gravar_chaves(chaves)
+                if request.form.get("buscar"):
+                    trabalhador.agendar("Buscando vagas para o seu perfil", servico.importar_do_perfil)
+                    return redirect(url_for("swipe"))
+                trabalhador.agendar("Recalculando compatibilidade", servico.pontuar_novas)
+                return redirect(url_for("configuracoes", salvo=1))
+            prefs = {**prefs, **novas}
+        area = prefs.get("area") or ("desenvolvimento" if prefs.get("termos_remotar") else "")
+        return render_template(
+            "configuracoes.html", c=c, prefs=prefs, area=area, areas=areas.AREAS, fontes=areas.FONTES,
+            fontes_marcadas=areas.fontes(prefs), termos=areas.termos_busca(prefs), aviso=aviso,
+            salvo=request.args.get("salvo"), primeira=request.args.get("primeira"),
+            smtp_usuario=config.SMTP_USUARIO, tem_senha=bool(config.SMTP_SENHA),
+            envio_real=config.ENVIO_REAL, enviar_ao_curtir=config.ENVIAR_AO_CURTIR,
+            copia=config.EMAIL_COPIA_PARA_MIM, perfil_id=config.PERFIL_ATIVO,
+            tem_ia=bool(config.IA_API_KEY) and config.IA_PROVEDOR == "groq", ia_no_resumo=config.IA_NO_RESUMO,
+            tem_brave=bool(config.BRAVE_API_KEY), tem_hunter=bool(config.HUNTER_API_KEY),
+            tem_tavily=bool(config.TAVILY_API_KEY),
+            rotina=__import__("candidatura.rotina", fromlist=["situacao"]).situacao())
+
+    @app.get("/funil")
+    def pagina_funil():
+        from candidatura import funil
+
+        return render_template("funil.html", linhas=funil.calcular())
+
+    @app.post("/api/etapa/<id_>")
+    def api_etapa(id_):
+        """Marca a etapa do processo (entrevista, teste, proposta...) — alimenta o funil."""
+        from candidatura import funil
+
+        repositorio.obter(id_) or abort(404)
+        etapa = str((request.get_json(silent=True) or {}).get("etapa") or "")
+        if etapa and etapa not in funil.ETAPAS:
+            abort(400)
+        repositorio.atualizar(id_, etapa=etapa or None)
+        return jsonify({"ok": True})
+
+    @app.post("/api/rotina")
+    def api_rotina():
+        from candidatura import rotina
+
+        dados = request.get_json(silent=True) or {}
+        try:
+            if dados.get("ligar"):
+                rotina.ativar(str(dados.get("hora") or "09:00"), auto=bool(dados.get("auto")))
+            else:
+                rotina.desativar()
+        except (RuntimeError, ValueError) as e:
+            return jsonify({"ok": False, "erro": str(e)}), 400
+        return jsonify({"ok": True, **rotina.situacao()})
+
+    @app.post("/api/testar-chave")
+    def api_testar_chave():
+        """Confere uma chave opcional sem gastar quase nada (Groq: 1 frase; Brave: 1 busca; Hunter: créditos)."""
+        from candidatura import busca_posts, hunter, ia
+
+        dados = request.get_json(silent=True) or {}
+        tipo, chave = dados.get("tipo"), (dados.get("chave") or "").strip()
+        antes = {k: getattr(config, k) for k in ("IA_PROVEDOR", "IA_API_KEY", "TAVILY_API_KEY", "BRAVE_API_KEY",
+                                                  "HUNTER_API_KEY")}
+        try:
+            if tipo == "groq":
+                config.IA_PROVEDOR, config.IA_API_KEY = "groq", chave or config.IA_API_KEY
+                ok = bool(ia.completar("Responda só: ok", "ok?", max_tokens=60))
+                modelo = config.IA_MODELO or ia._modelo_descoberto.get("groq") or ia.PROVEDORES["groq"][1]
+                if ok:
+                    msg = f"IA respondeu ✓ (modelo {modelo}). Clique em Salvar para usar."
+                elif "401" in ia.ultimo_erro or "invalid api key" in ia.ultimo_erro.lower():
+                    msg = "O Groq recusou a chave (inválida ou apagada). Gere outra em console.groq.com/keys."
+                else:
+                    msg = f"O Groq respondeu com erro: {ia.ultimo_erro or 'sem resposta'}"
+            elif tipo in ("tavily", "brave"):
+                if tipo == "tavily":
+                    config.TAVILY_API_KEY = chave or config.TAVILY_API_KEY
+                else:  # testa a Brave mesmo se houver Tavily salva
+                    config.TAVILY_API_KEY, config.BRAVE_API_KEY = "", chave or config.BRAVE_API_KEY
+                n = len(busca_posts.buscar('"envie seu currículo" vaga desenvolvedor'))
+                ok, msg = True, f"Busca funcionou ✓ ({n} resultados, gastou 1 crédito). Clique em Salvar para usar."
+            elif tipo == "hunter":
+                config.HUNTER_API_KEY = chave or config.HUNTER_API_KEY
+                c = hunter.creditos()
+                ok = c is not None
+                msg = f"Chave ok ✓ — {c['disponiveis'] - c['usadas']} buscas restantes no mês" if ok else "Chave do Hunter recusada."
+            else:
+                abort(400)
+        except Exception as e:  # noqa: BLE001 — devolve o motivo para a tela
+            ok, msg = False, str(e)[:200]
+        finally:
+            for k, v in antes.items():
+                setattr(config, k, v)
+        return jsonify({"ok": ok, "erro": "" if ok else msg, "msg": msg}), (200 if ok else 400)
+
+    @app.post("/api/empresas/hunter")
+    def api_empresas_hunter():
+        from candidatura import hunter
+
+        if not hunter.disponivel():
+            return jsonify({"ok": False, "erro": "Configure a chave do Hunter em Configurações → Chaves."}), 400
+        limite = inteiro((request.get_json(silent=True) or {}).get("limite"), 10, maximo=50)
+        c = candidato_ou_none()
+        trabalhador.agendar("Procurando e-mails de RH no Hunter", hunter.completar_empresas,
+                            (c.preferencias or {}) if c else {}, limite)
+        return jsonify({"ok": True})
+
+    @app.post("/api/testar-email")
+    def api_testar_email():
+        """Só faz login no SMTP (não envia nada) para conferir e-mail + senha de app."""
+        import smtplib
+        import ssl
+
+        dados = request.get_json(silent=True) or {}
+        usuario = (dados.get("usuario") or config.SMTP_USUARIO or "").strip()
+        senha = (dados.get("senha") or "").replace(" ", "") or config.SMTP_SENHA
+        if not usuario or not senha:
+            return jsonify({"ok": False, "erro": "Preencha o e-mail e a senha de app."}), 400
+        host = "smtp.gmail.com" if usuario.lower().endswith("@gmail.com") else config.SMTP_HOST
+        try:
+            with smtplib.SMTP(host, config.SMTP_PORTA, timeout=20) as s:
+                s.starttls(context=ssl.create_default_context())
+                s.login(usuario, senha)
+        except smtplib.SMTPAuthenticationError:
+            return jsonify({"ok": False, "erro": "O Gmail recusou o login. Use uma SENHA DE APP (16 letras), "
+                                                 "não a senha normal — e confira o e-mail."}), 400
+        except (smtplib.SMTPException, OSError) as e:
+            return jsonify({"ok": False, "erro": f"Não consegui conectar: {e}"}), 400
+        return jsonify({"ok": True})
 
     # ------------------------------------------------ cadastro único
 
@@ -196,8 +492,9 @@ def criar_app() -> Flask:
             if config.PERFIL_PATH.exists():
                 config.PERFIL_PATH.with_suffix(".yaml.bak").write_text(_yaml_atual(), encoding="utf-8")
             config.PERFIL_PATH.write_text(texto_yaml, encoding="utf-8")
-            termos = (c.preferencias or {}).get("termos_remotar") or ["python", "backend", "node"]
-            trabalhador.agendar("Buscando vagas para o seu perfil", servico.importar_tudo, remotar_termos=termos)
+            if not (c.preferencias or {}).get("area") and not (c.preferencias or {}).get("fontes"):
+                return redirect(url_for("configuracoes", primeira=1))  # 1ª vez: escolher área, busca e e-mail
+            trabalhador.agendar("Buscando vagas para o seu perfil", servico.importar_do_perfil)
             trabalhador.agendar("Recalculando compatibilidade", servico.pontuar_novas)
             return redirect(url_for("swipe"))
 
@@ -229,7 +526,11 @@ def criar_app() -> Flask:
     def pagina_empresas():
         empresas.sincronizar_lista()
         linhas = empresas.listar()
+        from candidatura import hunter
+
         return render_template("empresas.html", empresas=linhas, aviso=request.args.get("aviso", ""),
+                               tem_hunter=hunter.disponivel(),
+                               sem_email=sum(1 for e in linhas if not e.get("email") and (e.get("tipo") or "").lower() != "big tech"),
                                com_email=sum(1 for e in linhas if e.get("email")),
                                limite=config.LIMITE_DIARIO)
 
@@ -269,20 +570,36 @@ def criar_app() -> Flask:
         grupos = {
             "pronta": ["pronta", "curtida"],
             "manual": ["manual"],
-            "enviada": ["enviada"],
+            "enviada": ["enviada", "aplicada"],
             "respondida": ["respondida"],
             "erro": ["erro"],
             "descartada": ["descartada"],
         }
-        vagas = repositorio.listar(grupos.get(aba, ["pronta"]), limite=500,
-                                   ordem="enviada_em DESC, score DESC" if aba == "enviada" else "score DESC, criada_em DESC")
-        return render_template("fila.html", vagas=vagas, aba=aba, metricas=repositorio.metricas(),
-                               limite=config.LIMITE_DIARIO)
+        # "Prontas" tem duas listas: o que falta enviar e o que já saiu por e-mail.
+        ver = request.args.get("ver", "falta") if aba == "pronta" else ""
+        enviadas_email = [v for v in repositorio.listar("enviada", limite=2000, ordem="enviada_em DESC")
+                          if v.get("email_destino")] if aba == "pronta" else []
+        if ver == "enviadas":
+            vagas = enviadas_email
+        else:
+            vagas = repositorio.listar(grupos.get(aba, ["pronta"]), limite=500,
+                                       ordem="coalesce(enviada_em, aplicada_em) DESC, score DESC" if aba == "enviada"
+                                       else "score DESC, criada_em DESC")
+        if ver == "falta":  # avisa o que NÃO vai sair porque a empresa/e-mail já recebeu candidatura
+            for v in vagas:
+                v["ja_contatado"] = bool(v.get("email_destino")) and repositorio.ja_contatado(
+                    v["email_destino"], v.get("empresa") or "", config.DIAS_SEM_REPETIR_EMPRESA, v["id"])
+        contagem = repositorio.contagem_por_status()
+        return render_template("fila.html", vagas=vagas, aba=aba, ver=ver, metricas=repositorio.metricas(),
+                               limite=config.LIMITE_DIARIO, n_falta=contagem["pronta"] + contagem["curtida"],
+                               n_enviadas_email=len(enviadas_email), dias_repetir=config.DIAS_SEM_REPETIR_EMPRESA)
 
     @app.get("/vaga/<id_>")
     def detalhe(id_):
         v = repositorio.obter(id_) or abort(404)
-        return render_template("detalhe.html", v=v, aviso=request.args.get("aviso", ""))
+        from candidatura import funil
+
+        return render_template("detalhe.html", v=v, aviso=request.args.get("aviso", ""), etapas=funil.ETAPAS)
 
     @app.post("/vaga/<id_>")
     def salvar_detalhe(id_):
@@ -314,7 +631,7 @@ def criar_app() -> Flask:
     @app.route("/nova", methods=["GET", "POST"])
     def nova():
         if request.method == "GET":
-            return render_template("nova.html")
+            return render_template("nova.html", enviar_ao_curtir=config.ENVIAR_AO_CURTIR)
         f = request.form
         descricao = f.get("descricao", "")
         emails = extrair_emails(descricao)
@@ -339,14 +656,62 @@ def criar_app() -> Flask:
                 return redirect(url_for("detalhe", id_=vaga["id"]))
             repositorio.atualizar(vaga["id"], **{k: v for k, v in vaga.items()
                                                  if k not in ("id", "site", "origem") and v})
-        trabalhador.agendar(f"Preparando {vaga['titulo']}", servico.preparar, vaga["id"])
+        tarefa = servico.preparar_e_enviar if f.get("enviar") else servico.preparar
+        trabalhador.agendar(f"Preparando {vaga['titulo']}", tarefa, vaga["id"])
         return redirect(url_for("fila", aba="pronta"))
+
+    @app.post("/api/ler-post")
+    def api_ler_post():
+        """Post colado (LinkedIn/WhatsApp...) -> cargo, empresa, e-mail, local. Não salva nada."""
+        from candidatura import posts
+
+        texto = str((request.get_json(silent=True) or {}).get("texto") or "")[:20000]
+        return jsonify(posts.ler_post(texto))
 
     # ---------------------------------------------------------------- API
 
     @app.get("/api/proximas")
     def api_proximas():
-        return jsonify(proximas(inteiro(request.args.get("n"), 3, maximo=50), request.args.get("filtro", "")))
+        return jsonify(proximas(inteiro(request.args.get("n"), 3, maximo=50), localizacao.Filtros.de_args(request.args)))
+
+    @app.get("/api/localidades")
+    def api_localidades():
+        """Sugestões para o campo de localização ("udia" -> Uberlândia - MG)."""
+        from candidatura import localidades
+
+        q = (request.args.get("q") or "")[:60]
+        return jsonify([s.como_dict() for s in localidades.sugerir(q, limite=8)])
+
+    @app.get("/api/filtros")
+    def api_filtros():
+        """Quantas vagas novas passam no filtro atual + contagem por opção (para os rótulos)."""
+        filtros = localizacao.Filtros.de_args(request.args)
+        passam = filtradas(filtros)
+        todas = [(v, classificada(v)) for v in repositorio.listar("nova", limite=100000)]
+        def contar(campo):
+            contagem: dict[str, int] = {}
+            for _, c in todas:
+                valor = getattr(c, campo) or "indefinido"
+                contagem[valor] = contagem.get(valor, 0) + 1
+            return contagem
+        return jsonify({"total": len(passam), "novas": len(todas),
+                        "lugar": filtros.lugar.como_dict() if filtros.lugar else None,
+                        "contagem": {campo: contar(campo) for campo in ("pais", "idioma", "modalidade", "regiao")}})
+
+    @app.post("/api/aplicada/<id_>")
+    def api_aplicada(id_):
+        """Check de "já me candidatei pelo site" (vaga sem e-mail) — e o desfazer."""
+        v = repositorio.obter(id_) or abort(404)
+        feito = bool((request.get_json(silent=True) or {}).get("feito", True))
+        if feito:
+            if v["status"] not in ("manual", "pronta", "erro", "curtida", "nova"):
+                return jsonify({"ok": False, "erro": f"Não dá para marcar uma vaga '{v['status']}'."}), 400
+            repositorio.atualizar(id_, status="aplicada", aplicada_em=datetime.now().isoformat(timespec="seconds"))
+        else:
+            if v["status"] != "aplicada":
+                return jsonify({"ok": False, "erro": "Essa vaga não está marcada."}), 400
+            repositorio.atualizar(id_, status="manual" if v.get("cv_path") else "nova", aplicada_em=None)
+        return jsonify({"ok": True, "contagem": repositorio.contagem_por_status()})
 
     @app.post("/api/decidir/<id_>")
     def api_decidir(id_):
@@ -357,7 +722,10 @@ def criar_app() -> Flask:
                 return jsonify({"ok": False, "erro": "Essa vaga já foi enviada."}), 400
         if acao == "curtir":
             repositorio.atualizar(id_, status="curtida")
-            trabalhador.agendar("Preparando currículo", servico.preparar, id_)
+            if config.ENVIAR_AO_CURTIR:
+                trabalhador.agendar("Preparando e enviando candidatura", servico.preparar_e_enviar, id_)
+            else:
+                trabalhador.agendar("Preparando currículo", servico.preparar, id_)
         elif acao == "descartar":
             repositorio.atualizar(id_, status="descartada")
         elif acao == "desfazer":
@@ -394,9 +762,9 @@ def criar_app() -> Flask:
 
     @app.post("/api/importar")
     def api_importar():
-        prefs = (candidato_ou_none().preferencias if candidato_ou_none() else {}) or {}
-        termos = prefs.get("termos_remotar") or ["python", "backend", "node"]
-        trabalhador.agendar("Buscando vagas (radar + GitHub + Remotar)", servico.importar_tudo, remotar_termos=termos)
+        if not candidato_ou_none():
+            return jsonify({"ok": False, "erro": "Monte seu perfil primeiro (aba Meu perfil)."}), 400
+        trabalhador.agendar("Buscando vagas nas fontes do seu perfil", servico.importar_do_perfil)
         return jsonify({"ok": True})
 
     @app.post("/api/enriquecer")

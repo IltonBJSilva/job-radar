@@ -24,6 +24,8 @@
     <button class="btn ok" data-trava onclick="preparar()">2. Preparar CV + carta ({{ com_email }} com e-mail)</button>
     <a class="btn" href="/fila?aba=pronta">3. Revisar e enviar →</a>
     <button class="btn" data-trava onclick="descobrir(true)" title="Visita de novo também as já verificadas">Verificar todas de novo</button>
+    {% if tem_hunter %}<button class="btn" data-trava onclick="hunter()" title="Gasta 1 busca do Hunter por empresa">📇 Procurar no Hunter ({{ sem_email }} sem e-mail)</button>
+    {% else %}<a class="btn" href="/configuracoes" title="Configure a chave grátis do Hunter">📇 Ativar Hunter</a>{% endif %}
   </div>
   <p class="muted" style="font-size:13px;margin-bottom:0">Envio: até {{ limite }} por dia, com 1–3 min entre um e outro (rajada de e-mails
     derruba sua conta no Gmail). Empresa já contatada nos últimos 30 dias é pulada.</p>
@@ -64,6 +66,12 @@
 <script>
   async function descobrir(todas) {
     try { await post('/api/empresas/descobrir', { todas }); toast('Procurando… (leva alguns minutos; pode navegar)'); }
+    catch (e) { toast(e.message); }
+  }
+  async function hunter() {
+    const n = prompt('Quantas empresas procurar no Hunter? (cada uma gasta 1 busca do seu plano)', '10');
+    if (!n) return;
+    try { await post('/api/empresas/hunter', { limite: parseInt(n) }); toast('Procurando no Hunter… atualize a página em instantes.'); }
     catch (e) { toast(e.message); }
   }
   async function preparar() {

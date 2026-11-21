@@ -275,6 +275,11 @@ def iniciar():
     repositorio.iniciar()
     with repositorio.conectar() as conn:
         conn.execute(_TABELA)
+        # Onde a empresa publica as vagas ("gupy:algar", "greenhouse:zupinnovation"...), para não procurar de novo.
+        existentes = {l[1] for l in conn.execute("PRAGMA table_info(empresas)")}
+        for coluna in ("ats", "ats_verificado_em"):
+            if coluna not in existentes:
+                conn.execute(f"ALTER TABLE empresas ADD COLUMN {coluna} TEXT")
 
 
 def sincronizar_lista(empresas: list[Empresa] | None = None) -> int:

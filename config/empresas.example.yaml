@@ -18,6 +18,11 @@ empresas:
   - {nome: Zup Innovation, site: zup.com.br, tipo: Consultoria, cidade: Uberlândia}
   - {nome: Sankhya, site: sankhya.com.br, tipo: Produto, cidade: Uberlândia}
   - {nome: Algar Tech, site: algartech.com, tipo: Consultoria, cidade: Uberlândia}
+  - {nome: Algar Telecom, site: algartelecom.com.br, tipo: Telecom, cidade: Uberlândia}
+  - {nome: Grupo Algar, site: algar.com.br, tipo: Grupo empresarial, cidade: Uberlândia}
+  - {nome: Martins, site: martins.com.br, tipo: Atacado e varejo, cidade: Uberlândia}
+  - {nome: Arcom, site: arcom.com.br, tipo: Atacado e distribuição, cidade: Uberlândia}
+  - {nome: Peixoto, site: peixoto.com.br, tipo: Atacado e distribuição, cidade: Uberlândia}
   - {nome: DB1 Group, site: db1.com.br, tipo: Fábrica de software, cidade: Maringá}
   - {nome: Softplan, site: softplan.com.br, tipo: Produto, cidade: Florianópolis}
   - {nome: CWI Software, site: cwi.com.br, tipo: Fábrica de software, cidade: Porto Alegre}

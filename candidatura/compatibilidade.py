@@ -90,10 +90,79 @@ VOCABULARIO: dict[str, list[str]] = {
     "Airflow": ["airflow"],
     "Spark": ["spark", "pyspark", "databricks"],
     "Machine Learning": ["machine learning", "aprendizado de maquina", "scikit-learn", "sklearn"],
-    "IA Generativa": ["llm", "llms", "ia generativa", "genai", "openai", "langchain", "rag"],
+    "IA Generativa": ["llm", "llms", "ia generativa", "genai", "generative ai", "openai", "langchain", "rag"],
+    "Agentes de IA": ["agentes de ia", "agente de ia", "ai agents", "ai agent", "agentic", "agentic ai",
+                      "multiagente", "multiagentes", "multi-agent", "langgraph", "crewai", "agents sdk"],
     "Scrum": ["scrum", "kanban", "agil", "agile", "metodologias ageis"],
     "Inglês": ["ingles", "english"],
     "Espanhol": ["espanhol", "spanish"],
+    # --- Cibersegurança ---------------------------------------------------
+    "SIEM": ["siem"],
+    "SOC": ["soc", "security operations center", "centro de operacoes de seguranca"],
+    "Splunk": ["splunk"],
+    "QRadar": ["qradar"],
+    "Microsoft Sentinel": ["microsoft sentinel", "azure sentinel"],
+    "Wazuh": ["wazuh"],
+    "ELK": ["elk", "kibana", "logstash"],
+    "Pentest": ["pentest", "pen test", "penetration testing", "teste de invasao", "testes de invasao",
+                "teste de intrusao", "testes de intrusao", "red team"],
+    "Burp Suite": ["burp", "burp suite"],
+    "Nmap": ["nmap"],
+    "Metasploit": ["metasploit"],
+    "Kali Linux": ["kali", "kali linux"],
+    "Wireshark": ["wireshark"],
+    "Resposta a Incidentes": ["resposta a incidentes", "incident response", "csirt", "tratamento de incidentes"],
+    "Gestão de Vulnerabilidades": ["gestao de vulnerabilidades", "vulnerability management", "analise de vulnerabilidades",
+                                   "tenable", "nessus", "qualys"],
+    "Threat Intelligence": ["threat intelligence", "inteligencia de ameacas", "threat hunting"],
+    "Firewall": ["firewall", "fortinet", "fortigate", "palo alto", "checkpoint", "pfsense"],
+    "IDS/IPS": ["ids/ips", "ips/ids", "snort", "suricata", "intrusion detection"],
+    "EDR/XDR": ["edr", "xdr", "crowdstrike", "sentinelone", "defender for endpoint"],
+    "IAM": ["iam", "gestao de identidades", "gestao de acessos", "identity and access", "okta", "sailpoint", "cyberark"],
+    "Active Directory": ["active directory", "entra id", "azure ad"],
+    "ISO 27001": ["iso 27001", "iso/iec 27001", "27001", "iso 27002"],
+    "NIST": ["nist", "nist csf"],
+    "LGPD": ["lgpd", "gdpr", "protecao de dados"],
+    "PCI DSS": ["pci dss", "pci-dss"],
+    "GRC": ["grc", "governanca de ti", "gestao de riscos", "riscos e compliance"],
+    "Forense Digital": ["forense", "forensics", "pericia digital"],
+    "Hardening": ["hardening"],
+    "DLP": ["dlp", "data loss prevention"],
+    "Zero Trust": ["zero trust"],
+    "Cloud Security": ["cloud security", "seguranca em nuvem", "cspm"],
+    "Criptografia": ["criptografia", "cryptography", "pki"],
+    "CompTIA Security+": ["security+", "comptia security", "security plus"],
+    "CEH": ["ceh", "certified ethical hacker"],
+    "CISSP": ["cissp"],
+    "OSCP": ["oscp"],
+    # --- Infraestrutura, redes e suporte ----------------------------------
+    "Redes": ["redes de computadores", "tcp/ip", "tcp ip", "networking", "roteamento", "switching", "vlan"],
+    "Windows Server": ["windows server"],
+    "VMware": ["vmware", "vsphere", "esxi"],
+    "Zabbix": ["zabbix"],
+    "Ansible": ["ansible"],
+    "Cisco": ["cisco", "ccna", "ccnp"],
+    "ITIL": ["itil"],
+    "PowerShell": ["powershell"],
+    "Suporte Técnico": ["suporte tecnico", "help desk", "helpdesk", "service desk"],
+    "Microsoft 365": ["office 365", "microsoft 365", "m365"],
+    # --- Dados e BI ---------------------------------------------------------
+    "Power BI": ["power bi", "powerbi"],
+    "Excel": ["excel"],
+    "Tableau": ["tableau"],
+    "Looker": ["looker"],
+    "ETL": ["etl", "elt"],
+    "Data Warehouse": ["data warehouse", "data lake", "lakehouse"],
+    "dbt": ["dbt"],
+    "Estatística": ["estatistica", "statistics"],
+    # --- QA, produto e design ----------------------------------------------
+    "Cypress": ["cypress"],
+    "Postman": ["postman"],
+    "JMeter": ["jmeter"],
+    "Testes Manuais": ["testes manuais", "manual testing", "qa manual"],
+    "Jira": ["jira"],
+    "Figma": ["figma"],
+    "UX": ["ux", "user experience", "experiencia do usuario"],
 }
 
 # Canônicos que, sozinhos, são palavra comum ("go-live", "rest of the team"):
@@ -107,6 +176,39 @@ _PADROES = {
     ]
     for canonico, variacoes in VOCABULARIO.items()
 }
+
+
+_VOCABULARIO_BASE = {k: list(v) for k, v in VOCABULARIO.items()}
+_extras_ativos: tuple[str, ...] = ()
+
+
+def _compilar(vocabulario: dict[str, list[str]]) -> dict[str, list[re.Pattern]]:
+    return {
+        canonico: [
+            re.compile(r"(?<![\w.#+-])" + re.escape(normalizar(v)) + r"(?![\w#+]|\.\w)")
+            for v in variacoes + ([] if canonico in _CANONICO_AMBIGUO else [canonico])
+        ]
+        for canonico, variacoes in vocabulario.items()
+    }
+
+
+def usar_termos_extras(termos: list[str]) -> None:
+    """Termos da área da pessoa que o vocabulário não conhece (ex.: "SAP", "AutoCAD",
+    "Marketing Digital"), declarados em preferencias.termos_extras do perfil.
+    Viram competências reconhecidas na vaga e no currículo, como as embutidas."""
+    global _PADROES, _extras_ativos
+    chave = tuple(sorted({str(t).strip() for t in termos or [] if str(t).strip()}))
+    if chave == _extras_ativos:
+        return
+    vocabulario = {k: list(v) for k, v in _VOCABULARIO_BASE.items()}
+    conhecidos = {normalizar(v) for vs in vocabulario.values() for v in vs} | {normalizar(k) for k in vocabulario}
+    for termo in chave:
+        if normalizar(termo) not in conhecidos:
+            vocabulario[termo] = [termo.lower()]
+    VOCABULARIO.clear()
+    VOCABULARIO.update(vocabulario)
+    _PADROES = _compilar(vocabulario)
+    _extras_ativos = chave
 
 
 def extrair_tecnologias(texto: str) -> list[str]:
@@ -150,7 +252,8 @@ SENIORIDADES = [
     ("Pleno", ["pleno", "pl", "mid-level", "mid level"]),
     ("Sênior", ["senior", "sr", "sr."]),
     ("Especialista", ["especialista", "staff", "principal", "lead", "tech lead", "lider", "manager", "gerente",
-                      "head", "coordenador", "coordenadora", "arquiteto", "architect"]),
+                      "head", "coordenador", "coordenadora", "arquiteto", "architect", "diretor", "diretora",
+                      "director", "ciso", "cto", "cio", "vp"]),
 ]
 
 
@@ -163,7 +266,7 @@ def detectar_senioridade(titulo: str) -> str:
 
 
 # Competências que quase toda vaga cita: contam, mas pouco.
-GENERICAS = {"Inglês", "Espanhol", "Git", "Scrum", "Linux", "SQL", "REST"}
+GENERICAS = {"Inglês", "Espanhol", "Git", "Scrum", "Linux", "SQL", "REST", "Excel", "Jira", "Microsoft 365"}
 
 
 @dataclass
@@ -190,6 +293,13 @@ IMPLICA = {
     "React": {"JavaScript"}, "Next.js": {"React", "JavaScript"}, "Vue": {"JavaScript"},
     "Spring": {"Java"}, "Laravel": {"PHP"}, "Rails": {"Ruby"},
     "Kubernetes": {"Docker"}, "PostgreSQL": {"SQL"}, "MySQL": {"SQL"}, "SQL Server": {"SQL"},
+    # Quem trabalha com SIEM, pentest, firewall... trabalha com segurança.
+    **{t: {"Segurança"} for t in ("SIEM", "SOC", "Splunk", "QRadar", "Microsoft Sentinel", "Wazuh", "Pentest",
+                                  "Burp Suite", "Metasploit", "Resposta a Incidentes", "Gestão de Vulnerabilidades",
+                                  "Threat Intelligence", "Firewall", "IDS/IPS", "EDR/XDR", "IAM", "ISO 27001",
+                                  "NIST", "PCI DSS", "Forense Digital", "Hardening", "DLP", "Zero Trust",
+                                  "Cloud Security", "CompTIA Security+", "CEH", "CISSP", "OSCP")},
+    "Power BI": {"Excel"}, "Cisco": {"Redes"},
 }
 
 NIVEIS = ["Estágio", "Júnior", "Pleno", "Sênior", "Especialista"]
@@ -218,10 +328,22 @@ def nivel_do_candidato(candidato: Candidato) -> str:
     return (candidato.preferencias or {}).get("senioridade") or detectar_senioridade(candidato.titulo)
 
 
+def variante_para_vaga(candidato: Candidato, titulo: str) -> Candidato:
+    """Vaga de estágio usa o perfil "estagio" (resumo de estudante, sem cara de
+    sênior), se você tiver declarado um em `variantes:`; senão, o perfil base."""
+    if detectar_senioridade(titulo) == "Estágio" and "estagio" in candidato.variantes:
+        return candidato.variantes["estagio"]
+    return candidato
+
+
 def analisar(candidato: Candidato, titulo: str, descricao: str) -> Analise:
+    candidato = variante_para_vaga(candidato, titulo)
+    usar_termos_extras((candidato.preferencias or {}).get("termos_extras") or [])
     texto_vaga = f"{titulo}\n{descricao}"
     pedidas = extrair_tecnologias(texto_vaga)
     perfil = {canonizar(h) for h in candidato.todas_habilidades}
+    # O título do perfil também é competência: "Analista de Segurança da Informação" tem Segurança.
+    perfil |= set(extrair_tecnologias(candidato.titulo))
     perfil |= set(extrair_tecnologias(" ".join(candidato.todas_habilidades)))
     for t in list(perfil):
         perfil |= IMPLICA.get(t, set())

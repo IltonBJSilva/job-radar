@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block titulo %}Funil — Job Radar{% endblock %}
+{% block head %}
+<style>
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: right; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .barra { display: inline-block; height: 8px; border-radius: 99px; background: var(--ok); vertical-align: middle; margin-left: 6px; }
+  tfoot td { font-weight: 700; border-top: 2px solid var(--line); }
+</style>
+{% endblock %}
+{% block corpo %}
+<div class="card" style="padding:22px 24px;margin-bottom:16px">
+  <h1 style="margin:0 0 6px;font-size:22px">📊 De onde vêm as respostas</h1>
+  <p class="muted" style="margin:0">Enviadas = por e-mail (de verdade) ou marcadas “candidatei pelo site”. Respostas são lidas do Gmail
+    (<code>candidatar.py respostas</code> ou a rotina diária). Entrevistas: marque a etapa na página de cada vaga.
+    Com algumas semanas de dados, gaste seus envios nas fontes com mais respostas.</p>
+</div>
+<div class="card" style="padding:6px 10px;overflow-x:auto">
+  <table>
+    <thead><tr><th>Fonte</th><th>Curtidas</th><th>Enviadas</th><th>Respostas</th><th>Taxa de resposta</th><th>Entrevistas</th></tr></thead>
+    <tbody>
+    {% for f in linhas %}
+      <tr><td><b>{{ f.fonte }}</b></td><td>{{ f.curtidas }}</td><td>{{ f.enviadas }}</td><td>{{ f.respostas }}</td>
+        <td>{{ f.taxa_resposta }}%<span class="barra" style="width:{{ f.taxa_resposta }}px"></span></td>
+        <td>{{ f.entrevistas }}{% if f.enviadas %} <span class="muted">({{ f.taxa_entrevista }}%)</span>{% endif %}</td></tr>
+    {% else %}
+      <tr><td colspan="6" class="muted" style="text-align:center;padding:30px">Ainda sem candidaturas. Curta vagas em Descobrir.</td></tr>
+    {% endfor %}
+    </tbody>
+    {% if linhas %}
+    <tfoot><tr><td>Total</td><td>{{ linhas|sum(attribute='curtidas') }}</td><td>{{ linhas|sum(attribute='enviadas') }}</td>
+      <td>{{ linhas|sum(attribute='respostas') }}</td><td></td><td>{{ linhas|sum(attribute='entrevistas') }}</td></tr></tfoot>
+    {% endif %}
+  </table>
+</div>
+{% endblock %}

@@ -26,7 +26,9 @@
   nav a.tab { text-decoration: none; color: var(--muted); padding: 6px 12px; border-radius: 999px; font-weight: 600; font-size: 14px; }
   nav a.tab.on, nav a.tab:hover { background: var(--chip); color: var(--chip-ink); }
   nav .badge { font-size: 11px; background: var(--line); color: var(--ink); padding: 1px 7px; border-radius: 999px; margin-left: 4px; }
-  nav .modo { margin-left: auto; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
+  nav .seletor-perfil { margin: 0 0 0 auto; display: flex; align-items: center; gap: 4px; font-size: 13px; }
+  nav .seletor-perfil select { width: auto; max-width: 170px; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; }
+  nav .modo { margin-left: 8px; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
   .modo.sim { background: #fff3d6; color: #8a5a00; } .modo.real { background: #ffe0e4; color: #a0162b; }
   @media (prefers-color-scheme: dark) { .modo.sim { background: #3d3214; color: #ffd27a; } .modo.real { background: #4a1820; color: #ff9aa8; } }
   main { max-width: 1040px; margin: 0 auto; padding: 22px 16px 60px; }
@@ -61,14 +63,21 @@
   <a class="tab {% if request.path == '/' %}on{% endif %}" href="/">Descobrir<span class="badge" data-conta="nova">{{ contagem.nova }}</span></a>
   <a class="tab {% if request.path == '/fila' and request.args.get('aba','pronta') == 'pronta' %}on{% endif %}" href="/fila?aba=pronta">Prontas<span class="badge" data-conta="pronta+curtida">{{ contagem.pronta + contagem.curtida }}</span></a>
   <a class="tab {% if request.args.get('aba') == 'manual' %}on{% endif %}" href="/fila?aba=manual">Sem e-mail<span class="badge" data-conta="manual">{{ contagem.manual }}</span></a>
-  <a class="tab {% if request.args.get('aba') == 'enviada' %}on{% endif %}" href="/fila?aba=enviada">Enviadas<span class="badge" data-conta="enviada">{{ contagem.enviada }}</span></a>
+  <a class="tab {% if request.args.get('aba') == 'enviada' %}on{% endif %}" href="/fila?aba=enviada">Enviadas<span class="badge" data-conta="enviada+aplicada">{{ contagem.enviada + contagem.aplicada }}</span></a>
   {% if contagem.respondida %}<a class="tab {% if request.args.get('aba') == 'respondida' %}on{% endif %}" href="/fila?aba=respondida">Respostas<span class="badge">{{ contagem.respondida }}</span></a>{% endif %}
   {% if contagem.erro %}<a class="tab {% if request.args.get('aba') == 'erro' %}on{% endif %}" href="/fila?aba=erro">Erros<span class="badge">{{ contagem.erro }}</span></a>{% endif %}
   <a class="tab {% if request.path == '/empresas' %}on{% endif %}" href="/empresas">Empresas</a>
-  <a class="tab {% if request.path == '/nova' %}on{% endif %}" href="/nova">+ Vaga manual</a>
+  <a class="tab {% if request.path == '/funil' %}on{% endif %}" href="/funil">📊 Funil</a>
+  <a class="tab {% if request.path == '/nova' %}on{% endif %}" href="/nova">+ Colar vaga/post</a>
   <a class="tab {% if request.path == '/perfil' %}on{% endif %}" href="/perfil">Meu perfil</a>
+  <a class="tab {% if request.path == '/configuracoes' %}on{% endif %}" href="/configuracoes">⚙️ Configurações</a>
   <span id="status"></span>
-  <span class="modo {{ 'real' if envio_real else 'sim' }}" title="Altere ENVIO_REAL no .env">{{ 'ENVIO REAL' if envio_real else 'MODO SIMULAÇÃO' }}</span>
+  <label class="seletor-perfil" title="Trocar de pessoa: cada perfil tem currículo, e-mail e vagas próprios">👤
+    <select id="seletorPerfil" aria-label="Perfil ativo" onchange="trocarPerfil(this)">
+      {% for p in perfis %}<option value="{{ p.id }}" {% if p.ativo %}selected{% endif %}>{{ p.nome }}</option>{% endfor %}
+      <option value="__novo__">+ Novo perfil…</option>
+    </select></label>
+  <span class="modo {{ 'real' if envio_real else 'sim' }}" title="Mude em Configurações">{{ 'ENVIO REAL' if envio_real else 'MODO SIMULAÇÃO' }}</span>
 </nav>
 <div class="ocupado-banner" id="ocupado" role="status" aria-live="polite"><span class="spin">⏳</span> <span id="ocupado-msg"></span></div>
 <main>{% block corpo %}{% endblock %}</main>
@@ -77,6 +86,11 @@
   function toast(msg, ms = 2600) {
     const t = document.getElementById('toast'); t.textContent = msg; t.style.display = 'block';
     clearTimeout(window._tt); window._tt = setTimeout(() => t.style.display = 'none', ms);
+  }
+  async function trocarPerfil(sel) {
+    if (sel.value === '__novo__') { location.href = '/perfis/novo'; return; }
+    try { await post('/api/perfil/ativar', { id: sel.value }); location.href = '/'; }
+    catch (e) { toast(e.message, 5000); location.reload(); }
   }
   async function post(url, body) {
     const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });

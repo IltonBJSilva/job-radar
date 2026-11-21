@@ -34,10 +34,10 @@ from candidatura import config, repositorio  # noqa: E402
 
 
 def _termos_remotar() -> list[str]:
+    from candidatura import areas
     from candidatura.perfil import carregar_candidato
 
-    prefs = carregar_candidato().preferencias or {}
-    return prefs.get("termos_remotar") or ["python", "backend", "node"]
+    return areas.termos_busca(carregar_candidato().preferencias or {}) or ["python", "backend", "node"]
 
 
 def _confirmar_real(args) -> bool:
@@ -63,6 +63,9 @@ def cmd_app(args):
     from web.app import criar_app
 
     app = criar_app()
+    from candidatura import localidades
+
+    localidades.atualizar_em_segundo_plano()  # municípios (IBGE) e países: renova a cópia local se passou de 7 dias
     print(f"\n  Job Radar — abra http://127.0.0.1:{args.porta}  ({'ENVIO REAL' if config.ENVIO_REAL else 'modo simulação'})\n")
     if not args.sem_navegador:
         import threading
@@ -75,7 +78,10 @@ def cmd_app(args):
 def cmd_importar(args):
     from candidatura import servico
 
-    r = servico.importar_tudo(github=not args.sem_github, remotar_termos=None if args.sem_remotar else _termos_remotar())
+    if args.sem_github or args.sem_remotar:  # modo antigo, com fontes desligadas à mão
+        r = servico.importar_tudo(github=not args.sem_github, remotar_termos=None if args.sem_remotar else _termos_remotar())
+    else:
+        r = servico.importar_do_perfil()  # fontes e termos escolhidos no perfil
     print("Importação:", r)
     if args.enriquecer:
         print("Descrições baixadas:", servico.enriquecer(limite=args.enriquecer))
@@ -139,7 +145,7 @@ def cmd_auto(args):
 
     real = _confirmar_real(args)
     r = servico.auto(score_minimo=args.score_min, limite=args.limite, real=real,
-                     usar_ia=not args.sem_ia, remotar_termos=_termos_remotar())
+                     usar_ia=not args.sem_ia)
     print("Importação:", r["importacao"])
     print("Selecionadas:", r["selecionadas"], "| Preparo:", r["preparo"])
     e = r["envio"]
@@ -172,33 +178,16 @@ def cmd_followup(args):
 
 
 def cmd_agendar(args):
-    """Cria uma tarefa diária no Agendador de Tarefas do Windows."""
-    import os
-    import subprocess
+    """Cria (ou mostra) a rotina diária deste perfil no Agendador de Tarefas do Windows."""
+    from candidatura import rotina
 
-    raiz = os.path.dirname(os.path.abspath(__file__))
-    python = os.path.join(raiz, "venv", "Scripts", "python.exe")
-    if not os.path.exists(python):
-        python = sys.executable
-    script = os.path.join(raiz, "rodar_diario.cmd")
-    conteudo = (
-        "@echo off\r\n"
-        f'cd /d "{raiz}"\r\n'
-        f'"{python}" candidatar.py importar --enriquecer 40\r\n'
-        + (f'"{python}" candidatar.py respostas\r\n' if config.SMTP_SENHA else "")
-        + (f'"{python}" candidatar.py auto --limite {args.limite}\r\n' if args.auto else "")
-        + (f'"{python}" candidatar.py followup --limite 5\r\n' if args.auto and config.SMTP_SENHA else "")
-    )
-    comando = ["schtasks", "/Create", "/F", "/SC", "DAILY", "/ST", args.hora, "/TN", "JobRadarCandidaturas",
-               "/TR", f'"{script}"']
     if args.mostrar:
-        print(f"Conteúdo de {script}:\n{conteudo}\nComando: {' '.join(comando)}\n(nada foi criado)")
+        print(rotina.conteudo(config.PERFIL_ATIVO, args.auto, args.limite))
+        print("(nada foi criado)")
         return
-    with open(script, "w", encoding="utf-8") as f:
-        f.write(conteudo)
-    print("Criando tarefa:", " ".join(comando))
-    subprocess.run(comando, check=True)
-    print(f"Pronto: todo dia às {args.hora} o Windows roda {script}. Remover: schtasks /Delete /TN JobRadarCandidaturas /F")
+    nome = rotina.ativar(args.hora, auto=args.auto, limite_auto=args.limite)
+    print(f"Pronto: todo dia às {args.hora} o Windows roda a rotina do perfil '{config.PERFIL_ATIVO}' "
+          f"(tarefa {nome}). Desligar: Configurações -> Rotina diária, ou schtasks /Delete /TN {nome} /F")
 
 
 def cmd_perfil(args):
@@ -269,6 +258,7 @@ def cmd_status(args):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description="Candidatura automática com currículo adaptado por vaga.")
+    p.add_argument("--perfil", help="id do perfil a usar (ex.: principal, joao). Padrão: o ativo na interface")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("iniciar", help="cria config/candidato.yaml a partir do exemplo").set_defaults(f=cmd_iniciar)
@@ -348,6 +338,13 @@ def main(argv=None):
 
     args = p.parse_args(argv)
     from candidatura.perfil import PerfilInvalido, PerfilNaoEncontrado
+
+    if args.perfil:
+        try:
+            config.ativar_perfil(args.perfil, lembrar=False)
+        except ValueError as e:
+            print(f"Erro: {e}. Perfis: {', '.join(config.listar_perfis())}")
+            sys.exit(2)
 
     try:
         args.f(args)

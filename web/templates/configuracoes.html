@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block titulo %}Configurações — Job Radar{% endblock %}
+{% block head %}
+<style>
+  .secao { padding: 20px 22px; margin-bottom: 16px; }
+  .secao h2 { margin: 0 0 4px; font-size: 18px; }
+  .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+  @media (max-width: 700px) { .grade { grid-template-columns: 1fr; } }
+  .opcoes { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 4px; }
+  .opcoes label { margin: 0; display: flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 99px; cursor: pointer; font-weight: 500; }
+  .opcoes input { width: auto; margin: 0; }
+  .opcoes label:has(input:checked) { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+  select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; }
+  .dica { font-size: 12.5px; color: var(--muted); margin: 4px 0 10px; }
+  .ok-msg { color: var(--ok); font-weight: 700; } .erro-msg { color: var(--no); font-weight: 700; }
+  .foco { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 4px 0 16px; }
+  .opcao-foco { margin: 0; display: flex; gap: 8px; align-items: flex-start; font-weight: 600; }
+  .opcao-foco input { width: auto; margin-top: 3px; }
+  .passo { font-size: 12px; font-weight: 800; color: var(--brand); text-transform: uppercase; letter-spacing: .6px; }
+</style>
+{% endblock %}
+{% block corpo %}
+<form method="post" style="max-width:880px;margin:0 auto">
+  {% if primeira %}<div class="passo">Último passo</div>{% endif %}
+  <h1 style="margin:2px 0 4px;font-size:24px">Configurações de {{ c.nome }}</h1>
+  <p class="muted" style="margin-top:0">Vale só para este perfil{% if perfil_id != 'principal' %} (<code>perfis/{{ perfil_id }}</code>){% endif %}.
+    Para outra pessoa, use <b>👤 → + Novo perfil</b>.</p>
+  {% if salvo %}<p class="ok-msg" role="status">✓ Salvo.</p>{% endif %}
+  {% if aviso %}<p class="erro-msg" role="alert">{{ aviso }}</p>{% endif %}
+
+  <div class="card secao">
+    <h2>1. Área e vagas que você procura</h2>
+    <label for="cf-area">Área</label>
+    <select id="cf-area" name="area" onchange="aplicarArea(this.value)">
+      <option value="" {% if not area %}selected{% endif %} disabled>Escolha…</option>
+      {% for chave, a in areas.items() %}<option value="{{ chave }}" {% if chave == area %}selected{% endif %}>{{ a.nome }}</option>{% endfor %}
+    </select>
+    <p class="dica">Escolher a área preenche os campos abaixo — ajuste à vontade.</p>
+    <div class="grade">
+      <div>
+        <label for="cf-termos">Termos de busca</label>
+        <textarea id="cf-termos" name="termos_busca" rows="3">{{ termos | join(', ') }}</textarea>
+        <p class="dica">O que digitar nos sites de vagas, separado por vírgula. Ex.: <i>analista SOC, pentest</i>.</p>
+      </div>
+      <div>
+        <label for="cf-cargos">Cargos que combinam com você</label>
+        <textarea id="cf-cargos" name="cargos_alvo" rows="3">{{ (prefs.cargos_alvo or []) | join(', ') }}</textarea>
+        <p class="dica">Vaga com uma dessas palavras no título ganha mais pontos de compatibilidade.</p>
+      </div>
+      <div>
+        <label for="cf-sen">Seu nível</label>
+        <select id="cf-sen" name="senioridade">
+          {% for s in ['Estágio', 'Júnior', 'Pleno', 'Sênior', 'Especialista'] %}<option {% if prefs.senioridade == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+        </select>
+        <p class="dica">Vagas muito acima ou abaixo perdem pontos.</p>
+      </div>
+      <div>
+        <label for="cf-mod">Modalidade / cidade (vai na carta)</label>
+        <input id="cf-mod" name="modalidade" value="{{ prefs.modalidade or '' }}" placeholder="ex.: Remoto ou híbrido em Uberlândia">
+      </div>
+    </div>
+    <label for="cf-extras">Competências da sua área que o sistema talvez não conheça</label>
+    <input id="cf-extras" name="termos_extras" value="{{ (prefs.termos_extras or []) | join(', ') }}" placeholder="ex.: SAP, AutoCAD, Google Ads">
+    <p class="dica">Já reconheço linguagens, cloud, dados, redes e segurança (SIEM, SOC, pentest, ISO 27001…). Some aqui o que for específico.</p>
+
+    {% set foco = prefs.foco_regional or {} %}
+    <div class="foco">
+      <label class="opcao-foco"><input type="checkbox" name="foco_ativo" {% if foco.ativo %}checked{% endif %}>
+        ⭐ Foco regional ligado — vagas desta cidade aparecem primeiro no swipe, o LinkedIn também busca nela e as empresas daqui são visitadas primeiro</label>
+      <label for="cf-foco" style="margin-top:8px">Cidade do foco</label>
+      <input id="cf-foco" name="foco_cidade" value="{{ (foco.cidade ~ (' - ' ~ foco.uf if foco.uf else '')) if foco.cidade else '' }}" placeholder="ex.: Uberlândia - MG (aceita “udia”, “BH”...)">
+      <p class="dica">Desmarque para ver todas as vagas só por compatibilidade, sem prioridade de cidade.</p>
+      <label class="opcao-foco" style="margin-top:6px"><input type="checkbox" name="alerta_telegram" {% if foco.alerta_telegram %}checked{% endif %}>
+        📱 Avisar no Telegram quando aparecer vaga desta cidade com compatibilidade a partir de
+        <input name="alerta_limiar" type="number" min="0" max="100" value="{{ foco.alerta_limiar or 75 }}" style="width:70px;padding:4px 6px;margin:0 4px"> %</label>
+      <p class="dica">Usa o bot do Telegram do .env (TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID). Cada vaga é avisada uma vez só.</p>
+    </div>
+
+    <span style="font-weight:600">Onde buscar</span>
+    <div class="opcoes">
+      {% for chave, nome in fontes.items() %}<label><input type="checkbox" name="fontes" value="{{ chave }}" {% if chave in fontes_marcadas %}checked{% endif %}> {{ nome }}</label>{% endfor %}
+    </div>
+    <p class="dica">LinkedIn, Catho e Indeed rodam no seu computador com os seus termos (pode levar alguns minutos).
+      “Sites das empresas” visita a lista da aba Empresas e puxa as vagas abertas no portal de cada uma.
+      O “Radar automático” só tem vagas de desenvolvimento.</p>
+  </div>
+
+  <div class="card secao">
+    <h2>2. Seu e-mail (para enviar as candidaturas)</h2>
+    <p class="muted" style="margin-top:0">Funciona com Gmail. Use uma <b>senha de app</b> — não a senha normal:
+      ative a <a href="https://myaccount.google.com/security" target="_blank" rel="noopener">verificação em duas etapas</a>
+      e crie a senha em <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>.</p>
+    <div class="grade">
+      <div>
+        <label for="cf-email">Seu Gmail</label>
+        <input id="cf-email" name="smtp_usuario" type="email" value="{{ smtp_usuario }}" placeholder="voce@gmail.com" autocomplete="off">
+      </div>
+      <div>
+        <label for="cf-senha">Senha de app (16 letras)</label>
+        <input id="cf-senha" name="smtp_senha" type="password" autocomplete="new-password"
+               placeholder="{{ '•••••••• já salva — deixe em branco para manter' if tem_senha else 'abcd efgh ijkl mnop' }}">
+      </div>
+    </div>
+    <p><button type="button" class="btn" onclick="testarEmail(this)">🔌 Testar conexão</button> <span id="resTeste" role="status"></span></p>
+    <div class="opcoes">
+      <label><input type="checkbox" name="envio_real" {% if envio_real %}checked{% endif %}> Enviar de verdade (desligado = só simula e gera .eml)</label>
+      <label><input type="checkbox" name="enviar_ao_curtir" {% if enviar_ao_curtir %}checked{% endif %}> O coração ♥ já envia</label>
+      <label><input type="checkbox" name="copia" {% if copia %}checked{% endif %}> Receber cópia de cada envio</label>
+    </div>
+  </div>
+
+  <div class="card secao">
+    <h2>3. Rotina diária automática</h2>
+    <p class="muted" style="margin-top:0">O Windows roda sozinho, todo dia, mesmo com esta página fechada (o computador precisa estar ligado):
+      busca vagas nas suas fontes, lê as respostas no Gmail e manda <b>1 follow-up</b> educado para quem não respondeu em 7 dias.</p>
+    <p id="rotinaStatus" style="font-weight:700">{% if rotina.ativa %}✓ Ligada — todo dia às {{ rotina.hora }}{% if rotina.auto %}, enviando as mais compatíveis{% endif %}{% if rotina.proxima %} (próxima: {{ rotina.proxima }}){% endif %}{% else %}Desligada{% endif %}</p>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <label for="rt-hora" style="margin:0">Horário</label>
+      <input id="rt-hora" type="time" value="{{ rotina.hora or '09:00' }}" style="width:auto">
+      <label class="opcao-foco" style="font-weight:500"><input type="checkbox" id="rt-auto" {% if rotina.auto %}checked{% endif %}>
+        também enviar sozinho as mais compatíveis com e-mail (modo auto)</label>
+    </div>
+    <p style="display:flex;gap:8px"><button type="button" class="btn ok" onclick="rotina(true, this)">{{ 'Atualizar rotina' if rotina.ativa else 'Ligar rotina diária' }}</button>
+      {% if rotina.ativa %}<button type="button" class="btn" onclick="rotina(false, this)">Desligar</button>{% endif %}</p>
+  </div>
+
+  <div class="card secao">
+    <h2>4. Chaves opcionais (grátis)</h2>
+    <p class="muted" style="margin-top:0">Valem para todos os perfis desta instalação. Deixe em branco para manter a que já está
+      salva; digite <code>-</code> para apagar.</p>
+    <label for="cf-ia">🤖 IA — chave do Groq <span class="muted">(carta e e-mail escritos para cada vaga)</span></label>
+    <div style="display:flex;gap:8px"><input id="cf-ia" name="ia_api_key" type="password" autocomplete="off"
+      placeholder="{{ '•••••••• já salva' if tem_ia else 'gsk_... (crie em console.groq.com/keys)' }}">
+      <button type="button" class="btn" onclick="testarChave('groq','cf-ia',this)">Testar</button></div>
+    <div class="opcoes"><label><input type="checkbox" name="ia_no_resumo" {% if ia_no_resumo %}checked{% endif %}>
+      IA reescreve também o resumo do currículo (desligado = o resumo é sempre o seu texto)</label></div>
+    <p class="dica">Crie a chave grátis em <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>.
+      A IA nunca inventa: resposta que cite número, link ou e-mail fora do seu perfil é descartada e volta o texto padrão.</p>
+
+    <label for="cf-tavily">🔎 Busca de posts de recrutadores — chave da Tavily <span class="muted">(grátis: 1.000 buscas/mês, sem cartão)</span></label>
+    <div style="display:flex;gap:8px"><input id="cf-tavily" name="tavily_api_key" type="password" autocomplete="off"
+      placeholder="{{ '•••••••• já salva' if tem_tavily else 'tvly-... (crie em app.tavily.com)' }}">
+      <button type="button" class="btn" onclick="testarChave('tavily','cf-tavily',this)">Testar</button></div>
+    <p class="dica">Procura posts públicos tipo “envie seu currículo para…” (sem entrar na sua conta do LinkedIn).
+      Cada busca gasta 1 crédito; o sistema usa no máximo 6 por rodada. Ligue a fonte “Posts públicos de recrutadores” acima.</p>
+    <details style="margin-bottom:12px"><summary class="muted" style="cursor:pointer">Já paga a Brave Search? Use a chave dela no lugar</summary>
+      <div style="display:flex;gap:8px;margin-top:8px"><input id="cf-brave" name="brave_api_key" type="password" autocomplete="off"
+        placeholder="{{ '•••••••• já salva' if tem_brave else 'chave da Brave (plano pago, exige cartão)' }}">
+        <button type="button" class="btn" onclick="testarChave('brave','cf-brave',this)">Testar</button></div>
+    </details>
+
+    <label for="cf-hunter">📇 Hunter.io — e-mail de RH das empresas sem e-mail publicado</label>
+    <div style="display:flex;gap:8px"><input id="cf-hunter" name="hunter_api_key" type="password" autocomplete="off"
+      placeholder="{{ '•••••••• já salva' if tem_hunter else 'crie em hunter.io (plano Free)' }}">
+      <button type="button" class="btn" onclick="testarChave('hunter','cf-hunter',this)">Testar</button></div>
+    <p class="dica">Usado na aba Empresas (botão “Procurar no Hunter”). O plano grátis tem poucas buscas por mês.</p>
+    <p id="resChave" role="status"></p>
+  </div>
+
+  <p style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn primary" name="buscar" value="1">💾 Salvar e buscar vagas</button>
+    <button class="btn">Só salvar</button>
+  </p>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+const AREAS = {{ areas | tojson }};
+function aplicarArea(chave) {
+  const a = AREAS[chave]; if (!a) return;
+  const preencher = (id, lista) => { if (lista.length) document.getElementById(id).value = lista.join(', '); };
+  preencher('cf-termos', a.termos_busca); preencher('cf-cargos', a.cargos_alvo);
+  document.getElementById('cf-extras').value = a.termos_extras.join(', ');
+  document.querySelectorAll('input[name=fontes]').forEach(i => i.checked = a.fontes.includes(i.value));
+}
+async function rotina(ligar, b) {
+  b.disabled = true;
+  try {
+    const r = await post('/api/rotina', { ligar, hora: document.getElementById('rt-hora').value, auto: document.getElementById('rt-auto').checked });
+    document.getElementById('rotinaStatus').textContent = r.ativa ? `✓ Ligada — todo dia às ${r.hora}${r.auto ? ', enviando as mais compatíveis' : ''}` : 'Desligada';
+    toast(r.ativa ? 'Rotina diária ligada' : 'Rotina desligada');
+  } catch (e) { toast(e.message, 6000); }
+  b.disabled = false;
+}
+async function testarChave(tipo, campo, b) {
+  const r = document.getElementById('resChave');
+  b.disabled = true; r.textContent = 'Testando…'; r.className = '';
+  try { const x = await post('/api/testar-chave', { tipo, chave: document.getElementById(campo).value }); r.textContent = x.msg; r.className = 'ok-msg'; }
+  catch (e) { r.textContent = e.message; r.className = 'erro-msg'; }
+  b.disabled = false;
+}
+async function testarEmail(b) {
+  const r = document.getElementById('resTeste');
+  b.disabled = true; r.textContent = 'Testando…'; r.className = '';
+  try {
+    await post('/api/testar-email', { usuario: document.getElementById('cf-email').value, senha: document.getElementById('cf-senha').value });
+    r.textContent = '✓ Conectou! (nenhum e-mail foi enviado)'; r.className = 'ok-msg';
+  } catch (e) { r.textContent = e.message; r.className = 'erro-msg'; }
+  b.disabled = false;
+}
+</script>
+{% endblock %}

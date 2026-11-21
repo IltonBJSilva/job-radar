@@ -53,6 +53,7 @@ def banco(tmp_path, monkeypatch):
     ("Java 17 com Spring Boot", {"Java", "Spring"}, {"JavaScript"}),
     ("C# e ASP.NET Core", {"C#", ".NET"}, set()),
     ("APIs RESTful e Postgres", {"REST", "PostgreSQL"}, set()),
+    ("Agentic AI com LangGraph e LLMs", {"Agentes de IA", "IA Generativa"}, set()),
 ])
 def test_extrair_tecnologias(texto, esperado, proibido):
     achadas = set(extrair_tecnologias(texto))
@@ -247,6 +248,9 @@ def test_preparar_sem_navegador(banco, candidato, monkeypatch):
     class FakePDF:
         def __enter__(self): return self
         def __exit__(self, *a): pass
+        def gerar_curriculo(self, curriculo, destino):
+            self.gerar("<html></html>", destino)
+            return "<html></html>", 2
         def gerar(self, html, destino):
             Path(destino).write_bytes(b"%PDF")
             return destino
@@ -334,6 +338,9 @@ def test_desfazer_durante_preparo_nao_coloca_na_fila(banco, candidato, monkeypat
     class FakePDF:
         def __enter__(self): return self
         def __exit__(self, *a): pass
+        def gerar_curriculo(self, curriculo, destino):
+            self.gerar("<html></html>", destino)
+            return "<html></html>", 2
         def gerar(self, html, destino):
             repositorio.atualizar("d1", status="nova")  # usuário clicou em desfazer no meio
             Path(destino).write_bytes(b"%PDF")
@@ -634,6 +641,9 @@ def test_vaga_em_ingles_nao_fica_pronta_para_envio(banco, candidato, monkeypatch
     class FakePDF:
         def __enter__(self): return self
         def __exit__(self, *a): pass
+        def gerar_curriculo(self, curriculo, destino):
+            self.gerar("<html></html>", destino)
+            return "<html></html>", 2
         def gerar(self, html, destino): Path(destino).write_bytes(b"%PDF")
 
     monkeypatch.setattr(servico, "GeradorPDF", FakePDF)
@@ -783,3 +793,129 @@ def test_importar_radar_nao_duplica_mesmo_link(banco, tmp_path):
         c.execute("INSERT INTO vagas_vistas VALUES ('a','Dev','E','L','https://mesmo','S','2026-01-01','','')")
         c.execute("INSERT INTO vagas_vistas VALUES ('b','Dev','E','L','https://mesmo','S','2026-01-02','','')")
     assert repositorio.importar_do_radar(radar_db=str(radar)) == 1
+
+
+# ------------------------------------------------ coração envia direto
+
+def test_preparar_e_enviar_envia_quando_fica_pronta(banco, candidato, monkeypatch):
+    id_ = _vaga_pronta(banco, "c1")
+    monkeypatch.setattr(servico, "preparar", lambda i: repositorio.obter(i))
+    monkeypatch.setattr(servico, "carregar_candidato", lambda: candidato)
+    monkeypatch.setattr(servico, "enviar_smtp", lambda msg: pytest.fail("simulação não usa SMTP"))
+    v = servico.preparar_e_enviar(id_, real=False)
+    assert v["status"] == "enviada" and v["simulado"] == 1
+
+
+def test_preparar_e_enviar_sem_email_nao_envia(banco, monkeypatch):
+    repositorio.inserir({"id": "c2", "titulo": "Dev", "empresa": "X", "status": "manual"})
+    monkeypatch.setattr(servico, "preparar", lambda i: repositorio.obter(i))
+    monkeypatch.setattr(servico, "enviar", lambda *a, **k: pytest.fail("não podia enviar"))
+    assert servico.preparar_e_enviar("c2", real=True)["status"] == "manual"
+
+
+def test_intervalo_anti_spam_espera_desde_ultimo_envio_real(banco, monkeypatch):
+    from datetime import datetime, timedelta
+    repositorio.inserir({"id": "e1", "titulo": "Dev", "empresa": "X", "status": "enviada", "simulado": 0,
+                         "enviada_em": (datetime.now() - timedelta(seconds=10)).isoformat(timespec="seconds")})
+    monkeypatch.setattr(config, "INTERVALO_MIN_SEG", 60)
+    monkeypatch.setattr(config, "INTERVALO_MAX_SEG", 60)
+    esperas = []
+    monkeypatch.setattr(servico.time, "sleep", esperas.append)
+    servico._esperar_intervalo_anti_spam(real=True)
+    assert len(esperas) == 1 and 45 <= esperas[0] <= 51
+    esperas.clear()
+    servico._esperar_intervalo_anti_spam(real=False)
+    assert esperas == []
+
+
+# --------------------------------------- currículo Overleaf em 2 páginas
+
+PERFIL_COM_IA = {
+    **PERFIL,
+    "preferencias": {"cargos_alvo": ["backend", "python"], "senioridade": "Pleno"},
+    "experiencias": [
+        {"cargo": f"Dev {i}", "empresa": f"Empresa {i}", "periodo": "2020 – 2021",
+         "conquistas": [f"Conquista {i}.{k} com Python" for k in range(5)]}
+        for i in range(4)
+    ],
+    "projetos": [
+        {"nome": "Agentes", "organizacao": "Independente", "periodo": "2026", "ia": True,
+         "descricao": "Orquestração multiagente", "itens": ["a1", "a2", "a3", "a4", "a5"]},
+        {"nome": "Jogo IA", "ia": True, "descricao": "Jogo", "itens": ["j1", "j2", "j3"]},
+        {"nome": "API", "descricao": "API em Flask"},
+        {"nome": "Bot", "descricao": "Bot em Node.js"},
+        {"nome": "Site", "descricao": "Site"},
+    ],
+    "variantes": {"estagio": {
+        "pessoal": {"titulo": "Estudante de SI"},
+        "resumo": "Graduando em Sistemas de Informação.",
+        "preferencias": {"senioridade": "Estágio", "cargos_alvo": ["desenvolvimento"]},
+    }},
+}
+
+
+def _cv(perfil=PERFIL_COM_IA, titulo="Dev Python Pleno"):
+    c = candidato_de_dict(perfil)
+    return montar_pacote(c, {"titulo": titulo, "empresa": "X", "descricao": "Python"},
+                         analisar(c, titulo, "Python"), usar_ia=False).curriculo
+
+
+def test_variante_de_estagio_troca_resumo_e_nao_perde_pontos():
+    c = candidato_de_dict(PERFIL_COM_IA)
+    assert c.variantes["estagio"].nome == c.nome  # herda o que não declarou
+    assert _cv(titulo="Estágio em Desenvolvimento Python").resumo.startswith("Graduando")
+    assert _cv(titulo="Desenvolvedor Python Pleno").resumo.startswith("Desenvolvedora backend")
+    sem_variante = candidato_de_dict({**PERFIL_COM_IA, "variantes": {}})
+    titulo = "Estágio em Desenvolvimento Python"
+    desc = "Python, Django, PostgreSQL e Docker"
+    assert analisar(c, titulo, desc).score > analisar(sem_variante, titulo, desc).score
+
+
+def test_cv_recebe_todos_os_projetos_e_o_layout_decide():
+    assert len(_cv().projetos) == 5  # o corte acontece só no ajuste para 2 páginas
+
+
+def test_plano_de_cortes_preserva_ia_e_corta_antigas_primeiro():
+    from candidatura.documentos import aplicar_cortes, plano_de_cortes
+
+    cv = _cv()
+    plano = plano_de_cortes(cv)
+    # Primeiro saem projetos comuns; o 1º tópico cortado de experiência é da mais antiga.
+    assert plano[0][0] == "proj"
+    assert next(k for t, k in plano if t == "exp") == len(cv.experiencias) - 1
+    tudo = aplicar_cortes(cv, plano)
+    assert any(p.ia for p in tudo.projetos)  # IA nunca some
+    assert all(len(e.conquistas) >= 2 for e in tudo.experiencias)
+    assert len(cv.experiencias[0].conquistas) == 5  # o original não muda
+
+
+def test_gerar_curriculo_escolhe_o_mais_completo_que_cabe(monkeypatch, tmp_path):
+    from candidatura import documentos
+
+    class Gerador(documentos.GeradorPDF):
+        def __init__(self): pass
+        def _pdf(self, html): return html.encode()
+
+    # "Páginas" proporcionais ao texto (sem a fonte embutida): força o gerador a cortar até caber.
+    monkeypatch.setattr(documentos, "fontes_css", lambda: "")
+    limite = len(documentos.html_curriculo(_cv(), documentos.LAYOUT_PADRAO)) * 0.93
+    monkeypatch.setattr(documentos, "contar_paginas", lambda pdf: 2 if len(pdf) <= limite else 3)
+    html, paginas = Gerador().gerar_curriculo(_cv(), tmp_path / "cv.pdf")
+    assert paginas == 2 and len(html) <= limite
+    assert "Projetos e Aplicações em Inteligência Artificial" in html
+    assert (tmp_path / "cv.pdf").read_bytes() == html.encode()
+
+
+def test_template_overleaf_mostra_secoes_e_detalhe_da_formacao():
+    from candidatura.documentos import html_curriculo
+
+    perfil = {**PERFIL_COM_IA, "formacao": [{"curso": "SI", "instituicao": "UFU", "periodo": "2024 – Atual",
+                                              "detalhe": "6º período"}],
+              "links": {"github": "https://github.com/ana", "certificados": "https://github.com/ana/certs"},
+              "certificacoes": ["130 cursos"]}
+    html = html_curriculo(_cv(perfil))
+    for trecho in ("Resumo Profissional", "Formação Acadêmica", "Habilidades Técnicas", "Experiência Profissional",
+                   "Projetos e Aplicações em Inteligência Artificial", "Projetos Selecionados", "6º período",
+                   "CMU Serif", ">GitHub<", "Formação Complementar"):
+        assert trecho in html, trecho
+    assert html.count("github.com/ana/certs") == 1  # link de certificados não vai para o cabeçalho
